@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>AutoBot</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="logo-dot"></span>
+          <span class="brand-text">AutoBot</span>
+        </div>
+        <button id="scrapeBtn" class="primary">Scrape this page</button>
+      </header>
+
+      <main>
+        <!-- RESULTS LIST -->
+        <section id="view-list" class="view active">
+          <div id="listEmpty" class="muted">
+            Click <strong>Scrape this page</strong> to detect vehicle cards.
+          </div>
+          <div id="listGrid" class="card-grid"></div>
+        </section>
+
+        <!-- DETAIL VIEW -->
+        <section id="view-detail" class="view">
+          <button id="backToList" class="link-btn">
+            ← Back to results
+          </button>
+
+          <div id="detailLoading" class="muted">
+            Loading vehicle details…
+          </div>
+
+          <div id="detailContent" hidden>
+            <div class="detail-columns">
+              <div class="detail-fields">
+                <h2 class="section-title">Listing details</h2>
+
+                <label class="field">
+                  <span>Title</span>
+                  <input id="field-title" />
+                </label>
+
+                <div class="field-row">
+                  <label class="field">
+                    <span>Year</span>
+                    <input id="field-year" />
+                  </label>
+                  <label class="field">
+                    <span>Make</span>
+                    <input id="field-make" />
+                  </label>
+                  <label class="field">
+                    <span>Model</span>
+                    <input id="field-model" />
+                  </label>
+                </div>
+
+                <div class="field-row">
+                  <label class="field">
+                    <span>Price</span>
+                    <input id="field-price" />
+                  </label>
+                  <label class="field">
+                    <span>Mileage</span>
+                    <input id="field-mileage" />
+                  </label>
+                </div>
+
+                <div class="field-row">
+                  <label class="field">
+                    <span>VIN</span>
+                    <input id="field-vin" />
+                  </label>
+                  <label class="field">
+                    <span>Body type</span>
+                    <input id="field-bodyType" />
+                  </label>
+                </div>
+
+                <div class="field-row">
+                  <label class="field">
+                    <span>Exterior color</span>
+                    <input id="field-extColor" />
+                  </label>
+                  <label class="field">
+                    <span>Interior color</span>
+                    <input id="field-intColor" />
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span>Description</span>
+                  <textarea id="field-description" rows="5"></textarea>
+                </label>
+              </div>
+
+              <div class="detail-photos">
+                <h2 class="section-title">
+                  Photos
+                  <span id="photosCount" class="muted small"></span>
+                </h2>
+                <div id="photosGrid" class="photos-grid"></div>
+                <div class="muted small">
+                  Click a photo to remove it from the listing.
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-actions">
+              <button id="btnSendFacebook" class="primary wide">
+                Send to Facebook
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

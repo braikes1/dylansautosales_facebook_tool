@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Auto Bot",
+  "description": "Scrape dealer listings, review details, and fill Facebook Marketplace vehicle listings.",
+  "version": "1.0.0",
+  "action": {
+    "default_title": "Auto Bot"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.facebook.com/marketplace/create/vehicle*"
+      ],
+      "js": ["facebook_fill.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "service_worker.js",
+    "type": "module"
+  },
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*",
+    "https://www.facebook.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["facebook_fill.js"],
+      "matches": ["https://www.facebook.com/*"]
+    }
+  ]
+}
