@@ -5,10 +5,17 @@ from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 import os
+import re
 import json
 from typing import List, Optional
 
 app = FastAPI()
+
+
+@app.get("/health")
+def health():
+    """Simple health check so the extension can verify the server is running."""
+    return {"status": "ok"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,7 +26,7 @@ app.add_middleware(
 
 # ========= OpenAI client =========
 client = OpenAI(
-    api_key=os.environ["OPENAI_API_KEY"]
+    api_key=os.environ.get("OPENAI_API_KEY", "")
 )
 
 FIELDS = [
@@ -49,15 +56,54 @@ class HtmlPayload(BaseModel):
     images: Optional[List[ImageCandidate]] = None
 
 
-def extract_json_object(raw: str) -> dict:
+def extract_json_object(raw: str, label: str = "") -> dict:
     """
-    Find the first {...} block in model output and parse as JSON.
+    Robustly extract the first valid JSON object from model output.
+    Strips markdown code fences and ignores any trailing text after
+    the closing brace.
     """
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start == -1 or end == -1 or end < start:
+    # 1) Strip markdown code fences  ```json ... ```  or  ``` ... ```
+    cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip()
+
+    # 2) Find the opening brace
+    start = cleaned.find("{")
+    if start == -1:
+        print(f"[main] {label} raw output: {raw!r}", flush=True)
         raise ValueError(f"No JSON object found in model output: {raw!r}")
-    return json.loads(raw[start : end + 1])
+
+    # 3) Walk forward counting braces to find the matching closing brace,
+    #    so trailing text after the object is ignored cleanly.
+    depth = 0
+    in_string = False
+    escape_next = False
+    end = -1
+    for i, ch in enumerate(cleaned[start:], start=start):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+
+    if end == -1:
+        print(f"[main] {label} raw output: {raw!r}", flush=True)
+        raise ValueError(f"No closing brace found in model output: {raw!r}")
+
+    json_str = cleaned[start : end + 1]
+    print(f"[main] {label} raw output: {raw!r}", flush=True)
+    return json.loads(json_str)
 
 
 @app.post("/fb/extract_html")
@@ -84,12 +130,12 @@ def extract_html(body: HtmlPayload):
 
     result = {k: "" for k in FIELDS}
     try:
-        resp = client.responses.create(
-            model="gpt-4.1-mini",
-            input=fields_prompt,
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": fields_prompt}],
         )
-        raw = resp.output_text
-        data = extract_json_object(raw)
+        raw = resp.choices[0].message.content
+        data = extract_json_object(raw, label="fields")
         for k in FIELDS:
             result[k] = data.get(k, "") or ""
     except Exception as e:
@@ -130,12 +176,12 @@ def extract_html(body: HtmlPayload):
             )
 
             try:
-                img_resp = client.responses.create(
-                    model="gpt-4.1-mini",
-                    input=img_prompt,
+                img_resp = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": img_prompt}],
                 )
-                raw_img = img_resp.output_text
-                img_obj = extract_json_object(raw_img)
+                raw_img = img_resp.choices[0].message.content
+                img_obj = extract_json_object(raw_img, label="images")
                 images_out = [u for u in img_obj.get("images", []) if isinstance(u, str)]
             except Exception:
                 images_out = []
