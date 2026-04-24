@@ -57,22 +57,13 @@ class HtmlPayload(BaseModel):
 
 
 def extract_json_object(raw: str, label: str = "") -> dict:
-    """
-    Robustly extract the first valid JSON object from model output.
-    Strips markdown code fences and ignores any trailing text after
-    the closing brace.
-    """
-    # 1) Strip markdown code fences  ```json ... ```  or  ``` ... ```
     cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip()
 
-    # 2) Find the opening brace
     start = cleaned.find("{")
     if start == -1:
         print(f"[main] {label} raw output: {raw!r}", flush=True)
         raise ValueError(f"No JSON object found in model output: {raw!r}")
 
-    # 3) Walk forward counting braces to find the matching closing brace,
-    #    so trailing text after the object is ignored cleanly.
     depth = 0
     in_string = False
     escape_next = False
@@ -108,12 +99,6 @@ def extract_json_object(raw: str, label: str = "") -> dict:
 
 @app.post("/fb/extract_html")
 def extract_html(body: HtmlPayload):
-    """
-    AI-only extractor:
-    - Uses LLM on page text to fill vehicle fields.
-    - Uses LLM on candidate images to pick the real car photos.
-    Returns a single object with the fields plus `images: [urls]`.
-    """
     soup = BeautifulSoup(body.html, "html.parser")
     text = soup.get_text(separator="\n")[:20000]
 
@@ -124,7 +109,19 @@ def extract_html(body: HtmlPayload):
         "From the text below, extract ONLY these fields and return ONLY valid JSON.\n"
         "Do NOT include any explanation, only a JSON object.\n"
         f"{json.dumps(base_fields, indent=2)}\n\n"
-        "If a value is not present in the text, leave it as an empty string.\n\n"
+        "Rules:\n"
+        "- Mileage: extract as shown (e.g. '54,233 miles'). Leave empty for new cars.\n"
+        "- VIN: full 17-character VIN only.\n"
+        "- Year/Make/Model: from the listing title or specs.\n"
+        "- Price: formatted with currency symbol (e.g. '$44,175').\n"
+        "- Exterior Color / Interior Color: use the full human-readable color name "
+        "(e.g. 'Selenite Grey Metallic', not a short code like 'Ack' or 'Lic'). "
+        "If you only see an abbreviation or code with no full name nearby, leave the field empty.\n"
+        "- Body Type: use standard terms like Sedan, SUV, Truck, Van, Coupe, etc.\n"
+        "- Description: write 2-3 sentences in a natural, sales-friendly tone "
+        "highlighting the vehicle's key features, trim level, and standout qualities. "
+        "Do NOT copy spec sheet text verbatim. Do NOT mention price or mileage.\n"
+        "- If a value is not present in the text, leave it as an empty string.\n\n"
         f"TEXT:\n{text}"
     )
 
@@ -139,14 +136,12 @@ def extract_html(body: HtmlPayload):
         for k in FIELDS:
             result[k] = data.get(k, "") or ""
     except Exception as e:
-        # If LLM fails, keep fields empty but include error
         result["Description"] = f"(AI field extraction failed: {e})"
 
     # ---------- 2) Images via LLM ----------
     images_out: List[str] = []
 
     if body.images:
-        # Build slim candidate list for the LLM
         candidates = [
             {
                 "src": c.src,
@@ -157,7 +152,7 @@ def extract_html(body: HtmlPayload):
             for c in body.images
             if c.src
         ]
-        slim = candidates[:60]  # avoid too many tokens
+        slim = candidates[:60]
 
         if slim:
             img_prompt = (
@@ -186,7 +181,6 @@ def extract_html(body: HtmlPayload):
             except Exception:
                 images_out = []
 
-        # Fallback: if LLM gave nothing, choose the largest-area few
         if not images_out and candidates:
             candidates_sorted = sorted(
                 candidates,
