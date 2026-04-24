@@ -96,6 +96,9 @@ def call_llm(text: str, candidates: List[dict]) -> Dict[str, object]:
         "- Use full VIN if present.\n"
         "- Year/Make/Model from the listing.\n"
         "- Price as a single formatted string with currency symbol if present.\n"
+        "- For Description, write 2-3 sentences in a natural, sales-friendly tone "
+        "highlighting the vehicle's key features, trim level, and condition. "
+        "Do not mention price or mileage in the description.\n"
         "- For Photos, pick only URLs that appear to be the real vehicle photos "
         "(not icons or logos), most likely from the vehicle gallery/carousel.\n"
         "Return an array of photo URLs under 'Photos'.\n"
@@ -107,14 +110,13 @@ def call_llm(text: str, candidates: List[dict]) -> Dict[str, object]:
         f"{text[:12000]}\n"
     )
 
-    resp = client.responses.create(
+    resp = client.chat.completions.create(
         model="gpt-4o-mini",
-        input=prompt,
+        messages=[{"role": "user", "content": prompt}],
     )
 
-    raw = getattr(resp, "output_text", None) or ""
-    # Log for debugging if needed
-    print("RAW LLM OUTPUT:", raw[:4000], flush=True)
+    raw = resp.choices[0].message.content or ""
+    print("[ai_scraper] fields raw output:", raw[:2000], flush=True)
 
     start = raw.find("{")
     end = raw.rfind("}")
@@ -167,7 +169,6 @@ def scrape_vehicle(url: str) -> Dict[str, object]:
             if ai.get(k):
                 result[k] = ai[k]
     except Exception as e:
-        # log but keep partial data
         print("LLM error:", e, flush=True)
 
     return result
