@@ -43,7 +43,7 @@ UA = (
 
 
 def get_client() -> OpenAI:
-    key = "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"
+    key = os.environ.get("OPENAI_API_KEY", "")
     if not key:
         raise RuntimeError("OPENAI_API_KEY environment variable is not set.")
     return OpenAI(api_key=key)
