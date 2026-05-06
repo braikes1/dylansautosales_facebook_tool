@@ -111,8 +111,18 @@
             <div class="detail-card">
               <div class="section-header">
                 <span class="section-title">Photos</span>
-                <span id="photosCount" class="photo-badge"></span>
+                <div class="photos-header-right">
+                  <span id="photosCount" class="photo-badge"></span>
+                  <label class="scrub-toggle" title="Remove dealer watermarks from photos">
+                    <input type="checkbox" id="scrubToggle" />
+                    <span class="scrub-track">
+                      <span class="scrub-thumb"></span>
+                    </span>
+                    <span class="scrub-label">Scrub</span>
+                  </label>
+                </div>
               </div>
+              <div id="scrubStatus" class="scrub-status" hidden></div>
               <div id="photosGrid" class="photos-grid"></div>
               <p class="photo-hint">Tap a photo to remove it from the listing.</p>
             </div>

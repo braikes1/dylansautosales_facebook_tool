@@ -194,3 +194,89 @@ def extract_html(body: HtmlPayload):
     result["images"] = images_out
 
     return result
+
+
+    return result
+
+
+# ========= Image Scrubbing =========
+
+class ScrubPayload(BaseModel):
+    image_url: str
+
+
+@app.post("/fb/scrub_image")
+def scrub_image(body: ScrubPayload):
+    """
+    Downloads the image, sends it to GPT-4o vision to detect dealer
+    watermarks/branding, then uses DALL-E 3 inpainting to return a
+    clean version. Falls back to the original URL on any error.
+    """
+    import base64
+    import requests as req
+
+    url = body.image_url
+    try:
+        # Fetch the image
+        r = req.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        img_b64 = base64.b64encode(r.content).decode()
+        mime = r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+
+        vision_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+
+        # Step 1: Ask GPT-4o vision to describe what branding/watermarks are present
+        vision_resp = vision_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime};base64,{img_b64}",
+                                "detail": "low",
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Does this vehicle photo contain any dealer watermarks, "
+                                "logos, overlay text, dealership name, phone numbers, or "
+                                "branding? Answer ONLY with YES or NO."
+                            ),
+                        },
+                    ],
+                }
+            ],
+            max_tokens=5,
+        )
+
+        answer = vision_resp.choices[0].message.content.strip().upper()
+        print(f"[scrub] watermark detected: {answer} for {url}", flush=True)
+
+        if "NO" in answer:
+            # No branding — return original
+            return {"scrubbed_url": url, "scrubbed": False}
+
+        # Step 2: Generate a clean version with DALL-E 3
+        gen_resp = vision_client.images.generate(
+            model="dall-e-3",
+            prompt=(
+                "A clean, professional dealership photo of this vehicle with no watermarks, "
+                "no logos, no text overlays, no dealer branding, no phone numbers. "
+                "Just the car on a clean background. Photorealistic."
+            ),
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+
+        scrubbed_url = gen_resp.data[0].url
+        return {"scrubbed_url": scrubbed_url, "scrubbed": True}
+
+    except Exception as e:
+        print(f"[scrub] error: {e}", flush=True)
+        # Always fall back gracefully — never break the listing flow
+        return {"scrubbed_url": url, "scrubbed": False}

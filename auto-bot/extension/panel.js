@@ -3,6 +3,8 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
+const API_BASE = "https://dylansautosales-facebook-tool.onrender.com";
+
 let state = {
   results: [],
   detail: null,
@@ -15,6 +17,7 @@ function init() {
   $("#scrapeBtn").addEventListener("click", scrapeCurrentPage);
   $("#backToList").addEventListener("click", () => switchView("list"));
   $("#btnSendFacebook").addEventListener("click", sendToFacebookFromDetail);
+  $("#scrubToggle").addEventListener("change", onScrubToggle);
   renderList();
   renderDetail();
 }
@@ -90,7 +93,6 @@ function renderList() {
     const meta = document.createElement("div");
     meta.className = "card-meta";
 
-    // Show only the vehicle name — no price
     const title = document.createElement("div");
     title.className = "card-title";
     title.textContent = v.title || "Unknown Vehicle";
@@ -143,6 +145,10 @@ function renderDetail() {
   $("#field-intColor").value    = fields["Interior Color"] || "";
   $("#field-description").value = fields.Description || "";
 
+  // Reset scrub toggle on new vehicle
+  $("#scrubToggle").checked = false;
+  $("#scrubStatus").hidden = true;
+
   renderPhotos(images || []);
 }
 
@@ -154,6 +160,8 @@ function renderPhotos(urls) {
   clean.forEach((url) => {
     const item = document.createElement("div");
     item.className = "photo-item";
+    item.dataset.originalUrl = url;
+    item.dataset.currentUrl = url;
     const img = document.createElement("img");
     img.src = url;
     img.alt = "Vehicle photo";
@@ -169,6 +177,62 @@ function renderPhotos(urls) {
     count.textContent = n ? `${n} selected` : "No photos";
   }
   updatePhotosCount();
+}
+
+/* ========== SCRUB TOGGLE ========== */
+
+async function onScrubToggle() {
+  const enabled = $("#scrubToggle").checked;
+  const status  = $("#scrubStatus");
+  const items   = Array.from($("#photosGrid").querySelectorAll(".photo-item"));
+
+  if (!enabled) {
+    // Restore original images
+    items.forEach((item) => {
+      const orig = item.dataset.originalUrl;
+      if (orig) {
+        item.querySelector("img").src = orig;
+        item.dataset.currentUrl = orig;
+        item.classList.remove("scrubbed", "scrubbing");
+      }
+    });
+    status.hidden = true;
+    return;
+  }
+
+  if (!items.length) return;
+
+  status.hidden = false;
+  status.textContent = `Scrubbing ${items.length} photos…`;
+
+  let done = 0;
+  await Promise.all(items.map(async (item) => {
+    const url = item.dataset.originalUrl;
+    if (!url) return;
+    item.classList.add("scrubbing");
+    try {
+      const resp = await fetch(`${API_BASE}/fb/scrub_image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_url: url }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (data.scrubbed_url) {
+        item.querySelector("img").src = data.scrubbed_url;
+        item.dataset.currentUrl = data.scrubbed_url;
+        item.classList.add("scrubbed");
+      }
+    } catch (e) {
+      console.warn("[scrub] failed for", url, e);
+    } finally {
+      item.classList.remove("scrubbing");
+      done++;
+      status.textContent = done < items.length
+        ? `Scrubbing photos… ${done}/${items.length}`
+        : `✓ ${done} photos scrubbed`;
+    }
+  }));
 }
 
 /* ========== DETAIL FLOW ========== */
