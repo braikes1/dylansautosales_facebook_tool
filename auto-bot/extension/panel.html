@@ -5,7 +5,8 @@
     <title>AutoBot</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="panel.css" />
   </head>
   <body>
@@ -16,7 +17,7 @@
             <span class="logo-dot"></span>
           </div>
           <div class="brand-text-group">
-            <span class="brand-name">AUTOBOT</span>
+            <span class="brand-name">AutoBot</span>
             <span class="brand-sub">Dylan's Auto Sales</span>
           </div>
         </div>
@@ -27,7 +28,7 @@
         <!-- RESULTS LIST -->
         <section id="view-list" class="view active">
           <div id="listEmpty" class="empty-state">
-            <div class="empty-icon">⬡</div>
+            <div class="empty-icon">🚗</div>
             <p>Click <strong>Scrape this page</strong> to detect vehicles.</p>
           </div>
           <div id="listGrid" class="card-grid"></div>
@@ -43,7 +44,7 @@
           </div>
 
           <div id="detailContent" hidden>
-            <div class="detail-fields">
+            <div class="detail-card">
               <div class="section-header">
                 <span class="section-title">Listing Details</span>
               </div>
@@ -107,10 +108,10 @@
               </label>
             </div>
 
-            <div class="detail-photos">
+            <div class="detail-card">
               <div class="section-header">
                 <span class="section-title">Photos</span>
-                <span id="photosCount" class="photo-count"></span>
+                <span id="photosCount" class="photo-badge"></span>
               </div>
               <div id="photosGrid" class="photos-grid"></div>
               <p class="photo-hint">Tap a photo to remove it from the listing.</p>
@@ -118,7 +119,7 @@
 
             <div class="detail-actions">
               <button id="btnSendFacebook" class="primary wide">
-                <span class="btn-icon">↗</span> Send to Facebook
+                Send to Facebook Marketplace
               </button>
             </div>
           </div>
