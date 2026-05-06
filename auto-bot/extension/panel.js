@@ -90,16 +90,12 @@ function renderList() {
     const meta = document.createElement("div");
     meta.className = "card-meta";
 
+    // Show only the vehicle name — no price
     const title = document.createElement("div");
     title.className = "card-title";
-    title.textContent = v.title || "Untitled vehicle";
-
-    const price = document.createElement("div");
-    price.className = "card-price";
-    price.textContent = v.price || "";
+    title.textContent = v.title || "Unknown Vehicle";
 
     meta.appendChild(title);
-    meta.appendChild(price);
     card.appendChild(img);
     card.appendChild(meta);
     grid.appendChild(card);
@@ -135,16 +131,16 @@ function renderDetail() {
     base.title ||
     `${fields.Year || ""} ${fields.Make || ""} ${fields.Model || ""}`.trim();
 
-  $("#field-title").value     = fields.Title || fallbackTitle || "";
-  $("#field-year").value      = fields.Year || "";
-  $("#field-make").value      = fields.Make || "";
-  $("#field-model").value     = fields.Model || "";
-  $("#field-price").value     = fields.Price || base.price || "";
-  $("#field-mileage").value   = fields.Mileage || base.mileage || "";
-  $("#field-vin").value       = fields.VIN || base.vin || "";
-  $("#field-bodyType").value  = fields["Body Type"] || "";
-  $("#field-extColor").value  = fields["Exterior Color"] || "";
-  $("#field-intColor").value  = fields["Interior Color"] || "";
+  $("#field-title").value       = fields.Title || fallbackTitle || "";
+  $("#field-year").value        = fields.Year || "";
+  $("#field-make").value        = fields.Make || "";
+  $("#field-model").value       = fields.Model || "";
+  $("#field-price").value       = fields.Price || base.price || "";
+  $("#field-mileage").value     = fields.Mileage || base.mileage || "";
+  $("#field-vin").value         = fields.VIN || base.vin || "";
+  $("#field-bodyType").value    = fields["Body Type"] || "";
+  $("#field-extColor").value    = fields["Exterior Color"] || "";
+  $("#field-intColor").value    = fields["Interior Color"] || "";
   $("#field-description").value = fields.Description || "";
 
   renderPhotos(images || []);
@@ -237,7 +233,6 @@ function scrapeVehiclesOnPage() {
   const TITLE_RE    = /\b(19|20)\d{2}\s+[A-Z][a-zA-Z\-]+(?:\s+[A-Za-z0-9\-]+){1,4}/;
 
   const JUNK_TITLE  = /^(pricing|new inventory|specials|finance|service|parts|about|contact|search|filter|sort|view all|load more|show more|start here|lower price|calculate|payment|get a quote|check availability|get my quote|shop|offers|sell|trade|click|nationwide|want a|add photo|add video)\b/i;
-
   const VEHICLE_URL = /\/(vehicle|inventory|used|new|pre.?owned|detail|vdp|listing|cars)[\/?]/i;
 
   const abs = (u) => {
@@ -247,7 +242,6 @@ function scrapeVehiclesOnPage() {
     } catch { return null; }
   };
 
-  // ── Price extraction ──────────────────────────────────────────────
   const MONEY_RE  = /\$\s*-?\d[\d,]*(?:\.\d{2})?/g;
   const LABEL_WIN = 42;
 
@@ -273,16 +267,14 @@ function scrapeVehiclesOnPage() {
         results.push({ label: classifyPriceContext(around), value: m[0] });
       }
     }
-    const pick  = (want) => results.find((r) => r.label === want)?.value;
-    const best  = pick("best") || pick("price") || null;
-    const msrp  = pick("msrp") || null;
+    const pick = (want) => results.find((r) => r.label === want)?.value;
+    const best = pick("best") || pick("price") || null;
+    const msrp = pick("msrp") || null;
     const fallback = results.find((r) => r.label !== "savings")?.value || null;
     return { bestPrice: best || fallback, msrp };
   }
 
-  // ── Title extraction ──────────────────────────────────────────────
   function extractTitle(card, text) {
-    // 1) Structured selectors — skip junk values
     const sels = [
       "h1", "h2", "h3",
       ".vehicle-title", ".vehicleName", ".vehicle-name",
@@ -298,42 +290,34 @@ function scrapeVehiclesOnPage() {
       const t = el.textContent.trim();
       if (t.length > 4 && !JUNK_TITLE.test(t)) return t;
     }
-    // 2) Year Make Model regex on raw text
     const m = text.match(TITLE_RE);
     if (m) return m[0].trim();
     return null;
   }
 
-  // ── Detail URL finder ─────────────────────────────────────────────
   function findDetailLink(card) {
-    // Prefer links with "details" text
     const textMatch = Array.from(card.querySelectorAll("a[href]")).find((a) =>
       /view\s*details|details|more info|view vehicle|see details/i.test(a.textContent || "")
     );
     if (textMatch) return textMatch.getAttribute("href");
-
-    // Then URL-pattern match
     const urlMatch = Array.from(card.querySelectorAll("a[href]")).find((a) =>
       VEHICLE_URL.test(a.getAttribute("href") || "")
     );
     if (urlMatch) return urlMatch.getAttribute("href");
-
     const dataHref = card.getAttribute("data-href");
     if (dataHref) return dataHref;
-
     return null;
   }
 
-  // ── Score & collect candidates ────────────────────────────────────
   const nodes = Array.from(document.querySelectorAll("article,li,div,section"));
   const candidates = [];
   for (const el of nodes) {
     const txt = el.innerText?.trim() ?? "";
     let score = 0;
-    if (PRICE_RE.test(txt))                                          score += 2;
-    if (VIN_RE.test(txt))                                            score += 3;
-    if (MILES_RE.test(txt))                                          score += 1;
-    if (/\b(VIN|Stock|Mileage|Certified|MSRP)\b/i.test(txt))        score += 1;
+    if (PRICE_RE.test(txt))                                   score += 2;
+    if (VIN_RE.test(txt))                                     score += 3;
+    if (MILES_RE.test(txt))                                   score += 1;
+    if (/\b(VIN|Stock|Mileage|Certified|MSRP)\b/i.test(txt)) score += 1;
     if (score >= 3) candidates.push(el);
     if (candidates.length > 250) break;
   }
@@ -347,7 +331,6 @@ function scrapeVehiclesOnPage() {
     return null;
   };
 
-  // ── Build results ─────────────────────────────────────────────────
   const out = [];
   for (const card of candidates) {
     const text       = card.innerText || "";
@@ -356,17 +339,14 @@ function scrapeVehiclesOnPage() {
     const detailUrl  = abs(detailHref);
     const vin        = (text.match(VIN_RE) || [])[0] || null;
 
-    // ── JUNK FILTER: must have VIN or a vehicle-pattern detail URL ──
     const hasVin        = !!vin;
     const hasVehicleUrl = !!detailUrl && VEHICLE_URL.test(detailUrl);
     if (!hasVin && !hasVehicleUrl) continue;
-
-    // Skip cards where the title is clearly not a vehicle name
     if (title && JUNK_TITLE.test(title)) continue;
 
     const { bestPrice, msrp } = findPricesInCard(card);
-    const mileage    = (text.match(MILES_RE) || [])[0] || null;
-    const stockMatch = text.match(/Stock\s*#?:?\s*([A-Z0-9\-]+)/i);
+    const mileage     = (text.match(MILES_RE) || [])[0] || null;
+    const stockMatch  = text.match(/Stock\s*#?:?\s*([A-Z0-9\-]+)/i);
     const stockNumber = stockMatch ? stockMatch[1] : null;
 
     const imgRaw =
@@ -378,7 +358,6 @@ function scrapeVehiclesOnPage() {
     out.push({ title, price: bestPrice, mileage, vin, stockNumber, image, detailUrl, msrp });
   }
 
-  // ── Deduplicate ───────────────────────────────────────────────────
   const seen  = new Set();
   const dedup = [];
   for (const r of out) {
