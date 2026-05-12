@@ -1,5 +1,7 @@
 // panel.js
 
+import { runBatchTest, generateCSV } from "./batch_test.js";
+
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
@@ -9,6 +11,7 @@ let state = {
   results: [],
   detail: null,
   activeView: "list",
+  batchResults: [],
 };
 
 init();
@@ -16,8 +19,12 @@ init();
 function init() {
   $("#scrapeBtn").addEventListener("click", scrapeCurrentPage);
   $("#backToList").addEventListener("click", () => switchView("list"));
+  $("#backFromBatch").addEventListener("click", () => switchView("list"));
   $("#btnSendFacebook").addEventListener("click", sendToFacebookFromDetail);
   $("#scrubToggle").addEventListener("change", onScrubToggle);
+  $("#batchTestBtn").addEventListener("click", () => switchView("batch"));
+  $("#startBatchBtn").addEventListener("click", startBatchTest);
+  $("#downloadCsvBtn").addEventListener("click", downloadCSV);
   renderList();
   renderDetail();
 }
@@ -110,6 +117,7 @@ function switchView(name) {
   state.activeView = name;
   $("#view-list").classList.toggle("active", name === "list");
   $("#view-detail").classList.toggle("active", name === "detail");
+  $("#view-batch").classList.toggle("active", name === "batch");
 }
 
 function renderDetail() {
@@ -145,7 +153,6 @@ function renderDetail() {
   $("#field-intColor").value    = fields["Interior Color"] || "";
   $("#field-description").value = fields.Description || "";
 
-  // Reset scrub toggle on new vehicle
   $("#scrubToggle").checked = false;
   $("#scrubStatus").hidden = true;
 
@@ -187,7 +194,6 @@ async function onScrubToggle() {
   const items   = Array.from($("#photosGrid").querySelectorAll(".photo-item"));
 
   if (!enabled) {
-    // Restore original images
     items.forEach((item) => {
       const orig = item.dataset.originalUrl;
       if (orig) {
@@ -286,6 +292,91 @@ function sendToFacebookFromDetail() {
   chrome.runtime.sendMessage({ type: "FB_OPEN_MARKETPLACE", payload: listing }, (resp) => {
     if (!resp || !resp.ok) console.error("FB_OPEN_MARKETPLACE failed:", resp);
   });
+}
+
+/* ========== BATCH TEST ========== */
+
+const SCORED_FIELDS = [
+  "Year", "Make", "Model", "Price",
+  "VIN", "Body Type", "Exterior Color",
+  "Interior Color", "Mileage", "Description",
+];
+
+async function startBatchTest() {
+  const startBtn      = $("#startBatchBtn");
+  const downloadBtn   = $("#downloadCsvBtn");
+  const statusEl      = $("#batchStatus");
+  const resultsEl     = $("#batchResults");
+  const progressBadge = $("#batchProgress");
+
+  startBtn.disabled = true;
+  startBtn.textContent = "Running…";
+  downloadBtn.hidden = true;
+  resultsEl.innerHTML = "";
+  state.batchResults = [];
+
+  await runBatchTest(
+    // onProgress
+    ({ current, total, url, status, pct }) => {
+      progressBadge.textContent = `${current}/${total}`;
+      statusEl.textContent = status === "running"
+        ? `Testing: ${new URL(url).hostname}`
+        : `${current}/${total} complete`;
+
+      // Update or add row
+      let row = resultsEl.querySelector(`[data-url="${CSS.escape(url)}"]`);
+      if (!row) {
+        row = document.createElement("div");
+        row.className = "batch-row running";
+        row.dataset.url = url;
+        row.innerHTML = `
+          <div class="batch-row-url">${new URL(url).hostname}</div>
+          <div class="batch-row-fields"></div>
+          <div class="batch-row-score">…</div>
+        `;
+        resultsEl.appendChild(row);
+        resultsEl.scrollTop = resultsEl.scrollHeight;
+      }
+      if (status !== "running") {
+        row.className = `batch-row ${status === "OK" ? "ok" : "fail"}`;
+        row.querySelector(".batch-row-score").textContent = status === "OK" ? `${pct}%` : "FAIL";
+      }
+    },
+    // onComplete
+    (results) => {
+      state.batchResults = results;
+      const ok  = results.filter(r => r.status === "OK");
+      const avg = ok.length ? Math.round(ok.reduce((s, r) => s + r.pct, 0) / ok.length) : 0;
+      statusEl.textContent = `Done — ${ok.length}/${results.length} sites passed • avg score ${avg}%`;
+      startBtn.disabled = false;
+      startBtn.textContent = "▶ Run Again";
+      downloadBtn.hidden = false;
+      progressBadge.textContent = `${results.length}/${results.length}`;
+
+      // Add field dots to each row
+      results.forEach(r => {
+        const row = resultsEl.querySelector(`[data-url="${CSS.escape(r.url)}"]`);
+        if (!row) return;
+        const dotsEl = row.querySelector(".batch-row-fields");
+        dotsEl.innerHTML = SCORED_FIELDS.map(f => {
+          const cls = r.scores?.[f] === "✓" ? "pass" : r.status !== "OK" ? "skip" : "fail";
+          return `<div class="batch-field-dot ${cls}" title="${f}"></div>`;
+        }).join("");
+      });
+    }
+  );
+}
+
+function downloadCSV() {
+  if (!state.batchResults.length) return;
+  const csv = generateCSV(state.batchResults);
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url;
+  a.download = `autobot_batch_test_${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ========== IN-PAGE SCRAPER ========== */

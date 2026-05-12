@@ -55,6 +55,56 @@ async function downloadImagesAsBase64(urls) {
   return out;
 }
 
+// ====== Shared tab scraper (used by both normal flow and batch test) ======
+async function scrapeDetailTab(detailUrl) {
+  const tab = await chrome.tabs.create({ url: detailUrl, active: false });
+
+  return new Promise((resolve, reject) => {
+    const onUpdated = async (tabId, info) => {
+      if (tabId !== tab.id || info.status !== "complete") return;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+
+      try {
+        const [inj] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const html = document.documentElement.outerHTML;
+            const url  = location.href;
+            const abs  = (u) => { try { return u ? new URL(u, location.href).href : null; } catch { return null; } };
+            const images = Array.from(document.querySelectorAll("img"))
+              .map(img => {
+                const raw = img.currentSrc || img.getAttribute("src") || img.getAttribute("data-src") ||
+                            img.getAttribute("data-lazy") || img.getAttribute("data-original") || "";
+                return { src: abs(raw), alt: img.alt || "", width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 };
+              })
+              .filter(i => i.src);
+            return { url, html, images };
+          },
+        });
+
+        const { url, html, images } = inj.result || {};
+
+        const resp = await fetch(API_EXTRACT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, html, images }),
+        });
+
+        const fields   = await resp.json().catch(() => ({}));
+        const aiImages = Array.isArray(fields.images) ? fields.images : [];
+
+        chrome.tabs.remove(tab.id);
+        resolve({ fields, images: aiImages.length ? aiImages : (images || []).map(i => i.src), html });
+      } catch (err) {
+        try { chrome.tabs.remove(tab.id); } catch {}
+        reject(err);
+      }
+    };
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
 // ====== Message router ======
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "FB_OPEN_MARKETPLACE") {
@@ -70,15 +120,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === "FETCH_DETAIL_VIA_API" && msg.detailUrl) {
-    console.log("[sw] FETCH_DETAIL_VIA_API received. URL:", msg.detailUrl);
     (async () => {
       try {
-        const data = await fetchDetailDataViaApi(msg.detailUrl);
-        console.log("[sw] FETCH_DETAIL_VIA_API success. Fields keys:", Object.keys(data.fields || {}));
+        // Health check first
+        const ping = await fetch(API_HEALTH, { signal: AbortSignal.timeout(5000) });
+        if (!ping.ok) throw new Error("Server returned " + ping.status);
+
+        const data = await scrapeDetailTab(msg.detailUrl);
         sendResponse({ ok: true, ...data });
       } catch (err) {
-        console.error("[sw] FETCH_DETAIL_VIA_API error:", err.message, err);
-        sendResponse({ ok: false, error: err.message || String(err) });
+        const isHealthFail = err.message?.includes("Server returned") || err.name === "TimeoutError";
+        sendResponse({
+          ok: false,
+          error: isHealthFail
+            ? "Cannot reach the AutoBot server. Make sure the AutoBot launcher is open and showing the green dot."
+            : err.message || String(err),
+        });
       }
     })();
     return true;
@@ -87,12 +144,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "FETCH_IMAGES" && Array.isArray(msg.urls)) {
     (async () => {
       try {
-        console.log("[sw] FETCH_IMAGES for", msg.urls.length, "urls");
         const images = await downloadImagesAsBase64(msg.urls);
         sendResponse({ images });
       } catch (err) {
-        console.error("[sw] FETCH_IMAGES error:", err);
         sendResponse({ images: [], error: err.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  // ====== BATCH TEST handler ======
+  if (msg.type === "BATCH_SCRAPE_URL" && msg.url) {
+    (async () => {
+      try {
+        const data = await scrapeDetailTab(msg.url);
+        sendResponse({ ok: true, fields: data.fields || {} });
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message || String(err) });
       }
     })();
     return true;
@@ -100,96 +168,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   return false;
 });
-
-async function fetchDetailDataViaApi(detailUrl) {
-  // Verify the local server is reachable
-  console.log("[sw] Pinging health check:", API_HEALTH);
-  try {
-    const ping = await fetch(API_HEALTH, { signal: AbortSignal.timeout(5000) });
-    console.log("[sw] Health check status:", ping.status);
-    if (!ping.ok) throw new Error("Server returned " + ping.status);
-  } catch (e) {
-    console.error("[sw] Health check failed:", e.message);
-    throw new Error(
-      "Cannot reach the AutoBot server. Make sure the AutoBot launcher is open and showing the green dot."
-    );
-  }
-
-  const tab = await chrome.tabs.create({ url: detailUrl, active: false });
-
-  return new Promise((resolve, reject) => {
-    const onUpdated = async (tabId, info) => {
-      if (tabId !== tab.id || info.status !== "complete") return;
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-
-      try {
-        const [inj] = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            const html = document.documentElement.outerHTML;
-            const url = location.href;
-
-            const abs = (u) => {
-              try {
-                if (!u) return null;
-                return new URL(u, location.href).href;
-              } catch {
-                return null;
-              }
-            };
-
-            const nodes = Array.from(document.querySelectorAll("img"));
-            const images = nodes
-              .map((img) => {
-                const raw =
-                  img.currentSrc ||
-                  img.getAttribute("src") ||
-                  img.getAttribute("data-src") ||
-                  img.getAttribute("data-lazy") ||
-                  img.getAttribute("data-original") ||
-                  "";
-                const src = abs(raw);
-                const w = img.naturalWidth || img.width || 0;
-                const h = img.naturalHeight || img.height || 0;
-                return { src, alt: img.alt || "", width: w, height: h };
-              })
-              .filter((img) => img.src);
-
-            return { url, html, images };
-          },
-        });
-
-        const { url, html, images } = inj.result || {};
-
-        console.log("[sw] Calling API extract:", API_EXTRACT, "| page URL:", url, "| images:", images.length);
-        const resp = await fetch(API_EXTRACT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, html, images }),
-        });
-
-        console.log("[sw] API extract response status:", resp.status);
-        const fields = await resp.json().catch(() => ({}));
-        console.log("[sw] API extract fields received:", fields);
-        const aiImages = Array.isArray(fields.images) ? fields.images : [];
-
-        chrome.tabs.remove(tab.id);
-
-        resolve({
-          fields,
-          images: aiImages.length ? aiImages : (images || []).map((i) => i.src),
-          html,
-        });
-      } catch (err) {
-        console.error("[sw] fetchDetailDataViaApi inner error:", err.message, err);
-        try { chrome.tabs.remove(tab.id); } catch (e) {}
-        reject(err);
-      }
-    };
-
-    chrome.tabs.onUpdated.addListener(onUpdated);
-  });
-}
 
 // Side panel wiring
 chrome.runtime.onInstalled.addListener(() => {

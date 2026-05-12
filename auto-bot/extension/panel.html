@@ -5,7 +5,6 @@
     <title>AutoBot</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="panel.css" />
   </head>
@@ -30,6 +29,7 @@
           <div id="listEmpty" class="empty-state">
             <div class="empty-icon">🚗</div>
             <p>Click <strong>Scrape this page</strong> to detect vehicles.</p>
+            <button id="batchTestBtn" class="batch-btn">🧪 Run Batch Test</button>
           </div>
           <div id="listGrid" class="card-grid"></div>
         </section>
@@ -131,6 +131,23 @@
               <button id="btnSendFacebook" class="primary wide">
                 Send to Facebook Marketplace
               </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- BATCH TEST VIEW -->
+        <section id="view-batch" class="view">
+          <button id="backFromBatch" class="link-btn">← Back</button>
+          <div class="detail-card">
+            <div class="section-header">
+              <span class="section-title">Batch Test</span>
+              <span id="batchProgress" class="photo-badge"></span>
+            </div>
+            <div id="batchStatus" class="batch-status"></div>
+            <div id="batchResults" class="batch-results"></div>
+            <div class="detail-actions" id="batchActions">
+              <button id="startBatchBtn" class="primary wide">▶ Start Test (38 dealers)</button>
+              <button id="downloadCsvBtn" class="wide" hidden>⬇ Download CSV Report</button>
             </div>
           </div>
         </section>
