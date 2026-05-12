@@ -64,6 +64,9 @@ async function scrapeDetailTab(detailUrl) {
       if (tabId !== tab.id || info.status !== "complete") return;
       chrome.tabs.onUpdated.removeListener(onUpdated);
 
+      // Wait 3s after page load for JS-rendered inventory to fully populate
+      await new Promise(r => setTimeout(r, 3000));
+
       try {
         const [inj] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -122,10 +125,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "FETCH_DETAIL_VIA_API" && msg.detailUrl) {
     (async () => {
       try {
-        // Health check first
         const ping = await fetch(API_HEALTH, { signal: AbortSignal.timeout(5000) });
         if (!ping.ok) throw new Error("Server returned " + ping.status);
-
         const data = await scrapeDetailTab(msg.detailUrl);
         sendResponse({ ok: true, ...data });
       } catch (err) {
