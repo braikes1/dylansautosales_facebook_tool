@@ -55,16 +55,18 @@ async function downloadImagesAsBase64(urls) {
   return out;
 }
 
-// ====== Shared tab scraper (used by both normal flow and batch test) ======
-async function scrapeDetailTab(detailUrl) {
-  const tab = await chrome.tabs.create({ url: detailUrl, active: false });
+// ====== Shared tab scraper ======
+// activeTab: true = visible tab (batch test mode, bypasses bot detection)
+//            false = background tab (normal detail flow)
+async function scrapeDetailTab(detailUrl, activeTab = false) {
+  const tab = await chrome.tabs.create({ url: detailUrl, active: activeTab });
 
   return new Promise((resolve, reject) => {
     const onUpdated = async (tabId, info) => {
       if (tabId !== tab.id || info.status !== "complete") return;
       chrome.tabs.onUpdated.removeListener(onUpdated);
 
-      // Wait 3s after page load for JS-rendered inventory to fully populate
+      // Wait 3s for JS-rendered inventory to fully populate
       await new Promise(r => setTimeout(r, 3000));
 
       try {
@@ -127,7 +129,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const ping = await fetch(API_HEALTH, { signal: AbortSignal.timeout(5000) });
         if (!ping.ok) throw new Error("Server returned " + ping.status);
-        const data = await scrapeDetailTab(msg.detailUrl);
+        const data = await scrapeDetailTab(msg.detailUrl, false); // background tab for normal flow
         sendResponse({ ok: true, ...data });
       } catch (err) {
         const isHealthFail = err.message?.includes("Server returned") || err.name === "TimeoutError";
@@ -154,11 +156,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // ====== BATCH TEST handler ======
+  // ====== BATCH TEST handler — active tab to bypass bot detection ======
   if (msg.type === "BATCH_SCRAPE_URL" && msg.url) {
     (async () => {
       try {
-        const data = await scrapeDetailTab(msg.url);
+        const data = await scrapeDetailTab(msg.url, true); // active tab — looks like real user
         sendResponse({ ok: true, fields: data.fields || {} });
       } catch (err) {
         sendResponse({ ok: false, error: err.message || String(err) });
