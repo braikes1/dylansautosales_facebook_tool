@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Auto Bot",
   "description": "Scrape dealer listings, review details, and fill Facebook Marketplace vehicle listings.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "action": {
     "default_title": "Auto Bot"
   },
@@ -27,8 +27,19 @@
     "scripting",
     "storage",
     "sidePanel",
-    "downloads"
+    "downloads",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "stealth_rules",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "host_permissions": [
     "http://*/*",
     "https://*/*",
@@ -36,7 +47,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["facebook_fill.js", "batch_test.js"],
+      "resources": ["facebook_fill.js", "batch_test.js", "test_single_dealer.js"],
       "matches": ["<all_urls>"]
     }
   ]

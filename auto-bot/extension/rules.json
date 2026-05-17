@@ -1,0 +1,267 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "sec-ch-ua",
+          "operation": "set",
+          "value": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\""
+        },
+        {
+          "header": "sec-ch-ua-mobile",
+          "operation": "set",
+          "value": "?0"
+        },
+        {
+          "header": "sec-ch-ua-platform",
+          "operation": "set",
+          "value": "\"Windows\""
+        },
+        {
+          "header": "sec-fetch-site",
+          "operation": "set",
+          "value": "none"
+        },
+        {
+          "header": "sec-fetch-mode",
+          "operation": "set",
+          "value": "navigate"
+        },
+        {
+          "header": "sec-fetch-user",
+          "operation": "set",
+          "value": "?1"
+        },
+        {
+          "header": "sec-fetch-dest",
+          "operation": "set",
+          "value": "document"
+        },
+        {
+          "header": "upgrade-insecure-requests",
+          "operation": "set",
+          "value": "1"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*philsmith*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "sec-ch-ua",
+          "operation": "set",
+          "value": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\""
+        },
+        {
+          "header": "sec-ch-ua-mobile",
+          "operation": "set",
+          "value": "?0"
+        },
+        {
+          "header": "sec-ch-ua-platform",
+          "operation": "set",
+          "value": "\"Windows\""
+        },
+        {
+          "header": "sec-fetch-site",
+          "operation": "set",
+          "value": "none"
+        },
+        {
+          "header": "sec-fetch-mode",
+          "operation": "set",
+          "value": "navigate"
+        },
+        {
+          "header": "sec-fetch-user",
+          "operation": "set",
+          "value": "?1"
+        },
+        {
+          "header": "sec-fetch-dest",
+          "operation": "set",
+          "value": "document"
+        },
+        {
+          "header": "upgrade-insecure-requests",
+          "operation": "set",
+          "value": "1"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*braman*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "sec-ch-ua",
+          "operation": "set",
+          "value": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\""
+        },
+        {
+          "header": "sec-ch-ua-mobile",
+          "operation": "set",
+          "value": "?0"
+        },
+        {
+          "header": "sec-ch-ua-platform",
+          "operation": "set",
+          "value": "\"Windows\""
+        },
+        {
+          "header": "sec-fetch-site",
+          "operation": "set",
+          "value": "none"
+        },
+        {
+          "header": "sec-fetch-mode",
+          "operation": "set",
+          "value": "navigate"
+        },
+        {
+          "header": "sec-fetch-user",
+          "operation": "set",
+          "value": "?1"
+        },
+        {
+          "header": "sec-fetch-dest",
+          "operation": "set",
+          "value": "document"
+        },
+        {
+          "header": "upgrade-insecure-requests",
+          "operation": "set",
+          "value": "1"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*rickcase*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "sec-ch-ua",
+          "operation": "set",
+          "value": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\""
+        },
+        {
+          "header": "sec-ch-ua-mobile",
+          "operation": "set",
+          "value": "?0"
+        },
+        {
+          "header": "sec-ch-ua-platform",
+          "operation": "set",
+          "value": "\"Windows\""
+        },
+        {
+          "header": "sec-fetch-site",
+          "operation": "set",
+          "value": "none"
+        },
+        {
+          "header": "sec-fetch-mode",
+          "operation": "set",
+          "value": "navigate"
+        },
+        {
+          "header": "sec-fetch-user",
+          "operation": "set",
+          "value": "?1"
+        },
+        {
+          "header": "sec-fetch-dest",
+          "operation": "set",
+          "value": "document"
+        },
+        {
+          "header": "upgrade-insecure-requests",
+          "operation": "set",
+          "value": "1"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*holmanhonda*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "sec-ch-ua",
+          "operation": "set",
+          "value": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\""
+        },
+        {
+          "header": "sec-ch-ua-mobile",
+          "operation": "set",
+          "value": "?0"
+        },
+        {
+          "header": "sec-ch-ua-platform",
+          "operation": "set",
+          "value": "\"Windows\""
+        },
+        {
+          "header": "sec-fetch-site",
+          "operation": "set",
+          "value": "none"
+        },
+        {
+          "header": "sec-fetch-mode",
+          "operation": "set",
+          "value": "navigate"
+        },
+        {
+          "header": "sec-fetch-user",
+          "operation": "set",
+          "value": "?1"
+        },
+        {
+          "header": "sec-fetch-dest",
+          "operation": "set",
+          "value": "document"
+        },
+        {
+          "header": "upgrade-insecure-requests",
+          "operation": "set",
+          "value": "1"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*coralsprings*",
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  }
+]

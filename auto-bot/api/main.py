@@ -105,18 +105,36 @@ def extract_html(body: HtmlPayload):
     soup = BeautifulSoup(body.html, "html.parser")
     text = soup.get_text(separator="\n")[:20000]
 
+    # Detect if this is an inventory list page (multiple vehicles) vs a VDP (single vehicle).
+    # On a list page, extract from the FIRST complete vehicle card only.
+    # On a VDP, extract from the whole page.
+    vin_count = len(set(re.findall(r'\b[A-HJ-NPR-Z0-9]{17}\b', text)))
+    is_list_page = vin_count > 1
+    if is_list_page:
+        # Limit to first ~5000 chars where the first card usually appears
+        text = text[:5000]
+
     # ---------- 1) Fields via LLM ----------
     base_fields = {k: "" for k in FIELDS}
+    page_context = (
+        "This is an inventory LIST page showing multiple vehicles. "
+        "Extract fields for the FIRST vehicle listed only.\n"
+        if is_list_page else
+        "This is a vehicle DETAIL page (VDP) showing a single vehicle.\n"
+    )
     fields_prompt = (
         "You are a data extractor for vehicle listings.\n"
+        f"{page_context}"
         "From the text below, extract ONLY these fields and return ONLY valid JSON.\n"
         "Do NOT include any explanation, only a JSON object.\n"
         f"{json.dumps(base_fields, indent=2)}\n\n"
         "Rules:\n"
-        "- Mileage: extract as shown (e.g. '54,233 miles'). Leave empty for new cars.\n"
+        "- Mileage: extract as shown (e.g. '54,233 miles'). For NEW cars with 0 miles, write '0 miles'. "
+        "Do NOT leave empty if any mileage figure appears in the text.\n"
         "- VIN: full 17-character VIN only.\n"
         "- Year/Make/Model: from the listing title or specs.\n"
-        "- Price: formatted with currency symbol (e.g. '$44,175').\n"
+        "- Price: formatted with currency symbol (e.g. '$44,175'). "
+        "Use internet/sale price over MSRP if both present.\n"
         "- Exterior Color / Interior Color: use the full human-readable color name "
         "(e.g. 'Selenite Grey Metallic', not a short code like 'Ack' or 'Lic'). "
         "If you only see an abbreviation or code with no full name nearby, leave the field empty.\n"
@@ -161,9 +179,15 @@ def extract_html(body: HtmlPayload):
         slim = candidates[:60]
 
         if slim:
+            list_page_note = (
+                "NOTE: This is an inventory LIST page with multiple vehicles. "
+                "Only pick photos for the FIRST vehicle listed.\n\n"
+                if is_list_page else ""
+            )
             img_prompt = (
                 "You are selecting vehicle photos from a dealership listing.\n"
                 "You will be given a JSON array of candidate <img> elements.\n"
+                f"{list_page_note}"
                 "Each item includes a URL and metadata.\n\n"
                 "Goal:\n"
                 "- Keep images that are clearly the car itself (exterior/interior photos\n"
