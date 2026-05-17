@@ -77,10 +77,15 @@ const SCORED_FIELDS = [
 
 const API_BASE    = "https://dylansautosales-facebook-tool.onrender.com";
 const API_EXTRACT = `${API_BASE}/fb/extract_html`;
-const DELAY_MS    = 3000; // 3s between tabs to avoid hammering
+const DELAY_MS    = 3000; // base delay between tabs (jitter added at runtime)
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
+}
+
+// Human-like jitter so batch requests don't look perfectly periodic
+function jitter(base = DELAY_MS, spread = 2000) {
+  return base + Math.floor(Math.random() * spread);
 }
 
 function scoreResult(fields) {
@@ -127,7 +132,7 @@ export async function runBatchTest(onProgress, onComplete) {
     results.push(result);
 
     onProgress({ current: i + 1, total, url, status: result.status, pct: result.pct });
-    await sleep(DELAY_MS);
+    await sleep(jitter());
   }
 
   onComplete(results);

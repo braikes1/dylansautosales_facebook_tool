@@ -180,6 +180,9 @@ function renderDetail() {
   $("#field-bodyType").value    = fields["Body Type"] || "";
   $("#field-extColor").value    = fields["Exterior Color"] || "";
   $("#field-intColor").value    = fields["Interior Color"] || "";
+  $("#field-condition").value   = fields["Condition"] || "";
+  $("#field-fuelType").value    = fields["Fuel Type"] || "";
+  $("#field-transmission").value = fields["Transmission"] || "";
   $("#field-description").value = fields.Description || "";
 
   $("#scrubToggle").checked = false;
@@ -314,6 +317,9 @@ function sendToFacebookFromDetail() {
     bodyType:      $("#field-bodyType").value.trim(),
     exteriorColor: $("#field-extColor").value.trim(),
     interiorColor: $("#field-intColor").value.trim(),
+    condition:     $("#field-condition").value.trim(),
+    fuelType:      $("#field-fuelType").value.trim(),
+    transmission:  $("#field-transmission").value.trim(),
     description:   $("#field-description").value.trim(),
     images:        Array.from($("#photosGrid").querySelectorAll("img")).map((img) => img.src),
     sourceUrl:     state.detail.url || state.detail.base.detailUrl || "",

@@ -39,6 +39,9 @@ FIELDS = [
     "Interior Color",
     "Exterior Color",
     "Body Type",
+    "Condition",
+    "Fuel Type",
+    "Transmission",
     "Description",
 ]
 
@@ -117,7 +120,10 @@ def extract_html(body: HtmlPayload):
         "- Exterior Color / Interior Color: use the full human-readable color name "
         "(e.g. 'Selenite Grey Metallic', not a short code like 'Ack' or 'Lic'). "
         "If you only see an abbreviation or code with no full name nearby, leave the field empty.\n"
-        "- Body Type: use standard terms like Sedan, SUV, Truck, Van, Coupe, etc.\n"
+        "- Body Type: standard terms — Sedan, SUV, Truck, Coupe, Convertible, Wagon, Hatchback, Van, Minivan.\n"
+        "- Condition: one of Excellent, Good, Fair, Poor. Use 'Excellent' for new or certified pre-owned.\n"
+        "- Fuel Type: one of Gasoline, Diesel, Electric, Hybrid, Plug-in Hybrid.\n"
+        "- Transmission: one of Automatic, Manual, CVT.\n"
         "- Description: write 2-3 sentences in a natural, sales-friendly tone "
         "highlighting the vehicle's key features, trim level, and standout qualities. "
         "Do NOT copy spec sheet text verbatim. Do NOT mention price or mileage.\n"
@@ -192,9 +198,6 @@ def extract_html(body: HtmlPayload):
             ]
 
     result["images"] = images_out
-
-    return result
-
 
     return result
 

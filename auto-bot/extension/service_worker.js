@@ -6,6 +6,26 @@ const API_BASE    = "https://dylansautosales-facebook-tool.onrender.com";
 const API_EXTRACT = `${API_BASE}/fb/extract_html`;
 const API_HEALTH  = `${API_BASE}/health`;
 
+// ====== Bot-detection mitigations ======
+
+// Rotate through realistic Chrome UAs so every scrape looks slightly different.
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+];
+
+function randomUA() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+// Add human-like jitter (ms) so requests aren't perfectly periodic.
+function jitter(base = 500, spread = 400) {
+  return base + Math.floor(Math.random() * spread);
+}
+
 // ====== image download helper ======
 async function downloadImageAsBase64(url) {
   console.log("[sw] downloadImageAsBase64:", url);
@@ -69,19 +89,75 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
       // Wait 5s for JS-rendered inventory to fully populate
       await new Promise(r => setTimeout(r, 5000));
 
-      // If the page loaded very few images, wait another 3s and try once more.
-      // Some dealer sites lazy-load the gallery after the initial render.
+      // ── Cookie / GDPR banner dismiss ──────────────────────────────────────
+      // Many dealer sites show a consent popup that blocks the page and stops
+      // images from loading. Click the most common "accept" button.
       try {
-        const [imgCountInj] = await chrome.scripting.executeScript({
+        await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func: () => document.querySelectorAll("img").length,
+          func: () => {
+            const ACCEPT_RE = /\b(accept\s*(all)?|i\s*agree|got\s*it|ok\b|allow\s*(all)?|continue|close)\b/i;
+            // Look for buttons / links / divs that look like consent-accept actions
+            const candidates = Array.from(
+              document.querySelectorAll('button,a,[role="button"],[id*="consent"],[id*="cookie"],[class*="consent"],[class*="cookie"]')
+            );
+            for (const el of candidates) {
+              const txt = (el.textContent || el.getAttribute("aria-label") || el.value || "").trim();
+              if (ACCEPT_RE.test(txt)) {
+                const r = el.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                  el.click();
+                  return `dismissed: ${txt}`;
+                }
+              }
+            }
+            return "no banner found";
+          },
         });
-        if ((imgCountInj?.result ?? 0) <= 5) {
-          console.log("[sw] Only", imgCountInj?.result, "images found after first wait — retrying in 3s...");
+        await new Promise(r => setTimeout(r, 800)); // let page settle after dismiss
+      } catch {
+        // Non-fatal
+      }
+
+      // ── Gallery scroll trigger ─────────────────────────────────────────────
+      // Scroll slowly down the page to trigger intersection-observer / lazy-load
+      // on dealer gallery carousels, then scroll back to top.
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const total = document.body.scrollHeight;
+            const step = 400;
+            let pos = 0;
+            const scroll = () => {
+              pos += step;
+              window.scrollTo(0, pos);
+              if (pos < total) setTimeout(scroll, 80);
+              else window.scrollTo(0, 0);
+            };
+            scroll();
+          },
+        });
+        await new Promise(r => setTimeout(r, 2500)); // wait for lazy images to load
+      } catch {
+        // Non-fatal
+      }
+
+      // ── Smart retry: count gallery-sized images (≥200px wide) ───────────────
+      // Total img count includes icons/logos; only large images are vehicle photos.
+      try {
+        const [galleryCountInj] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => Array.from(document.querySelectorAll("img"))
+            .filter(i => (i.naturalWidth || i.width || 0) >= 200).length,
+        });
+        const galleryCount = galleryCountInj?.result ?? 0;
+        if (galleryCount <= 3) {
+          console.log("[sw] Only", galleryCount, "gallery images after scroll — waiting 3s more...");
           await new Promise(r => setTimeout(r, 3000));
         }
       } catch {
-        // Non-fatal — proceed even if count check fails
+        // Non-fatal
       }
 
       try {
@@ -130,7 +206,10 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
 
         const resp = await fetch(API_EXTRACT, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": randomUA(),
+          },
           body: JSON.stringify({ url, html, images }),
         });
 

@@ -314,6 +314,7 @@
       InteriorColor: raw["Interior Color"] || raw.interiorColor || raw.interior_color || "",
       Condition:     raw.Condition     || raw.condition     || "",
       FuelType:      raw["Fuel Type"]  || raw.fuelType      || raw.fuel_type   || "",
+      Transmission:  raw["Transmission"] || raw.transmission || "",
     };
 
     LOG("Normalized listing:", normalized);
@@ -543,6 +544,12 @@
     // 11. Fuel type (Bug #13)
     if (listing.FuelType) {
       await selectLabelledDropdown(composer, ["fuel type", "fuel"], listing.FuelType);
+      await sleep(200);
+    }
+
+    // 12. Transmission
+    if (listing.Transmission) {
+      await selectLabelledDropdown(composer, ["transmission"], listing.Transmission);
       await sleep(200);
     }
 

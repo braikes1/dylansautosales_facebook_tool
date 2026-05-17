@@ -17,6 +17,9 @@ FIELDS = [
     "Interior Color",
     "Exterior Color",
     "Body Type",
+    "Condition",
+    "Fuel Type",
+    "Transmission",
     "Description",
     "Photos",
 ]
@@ -31,6 +34,9 @@ DEFAULT_RESULT: Dict[str, object] = {
     "Interior Color": "",
     "Exterior Color": "",
     "Body Type": "",
+    "Condition": "",
+    "Fuel Type": "",
+    "Transmission": "",
     "Description": "",
     "Photos": [],
 }
@@ -88,6 +94,9 @@ def call_llm(text: str, candidates: List[dict]) -> Dict[str, object]:
         '  "Interior Color": "",\n'
         '  "Exterior Color": "",\n'
         '  "Body Type": "",\n'
+        '  "Condition": "",\n'
+        '  "Fuel Type": "",\n'
+        '  "Transmission": "",\n'
         '  "Description": "",\n'
         '  "Photos": []\n'
         "}\n"
@@ -96,6 +105,10 @@ def call_llm(text: str, candidates: List[dict]) -> Dict[str, object]:
         "- Use full VIN if present.\n"
         "- Year/Make/Model from the listing.\n"
         "- Price as a single formatted string with currency symbol if present.\n"
+        "- Body Type: standard terms — Sedan, SUV, Truck, Coupe, Convertible, Wagon, Hatchback, Van, Minivan.\n"
+        "- Condition: one of Excellent, Good, Fair, Poor. Use 'Excellent' for certified pre-owned / like-new.\n"
+        "- Fuel Type: one of Gasoline, Diesel, Electric, Hybrid, Plug-in Hybrid.\n"
+        "- Transmission: one of Automatic, Manual, CVT.\n"
         "- For Description, write 2-3 sentences in a natural, sales-friendly tone "
         "highlighting the vehicle's key features, trim level, and condition. "
         "Do not mention price or mileage in the description.\n"
