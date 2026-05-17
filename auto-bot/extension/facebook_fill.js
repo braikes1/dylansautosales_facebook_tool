@@ -1135,6 +1135,25 @@
     LOG("run() starting...");
     await sleep(800); // let FB UI settle
 
+    // Guard: if FB landed on the "choose listing type" page instead of the
+    // vehicle form, wait up to 5 seconds for the URL to reach create/vehicle.
+    if (location.href.includes("marketplace") && !location.href.includes("create/vehicle")) {
+      LOG("Not on vehicle form yet — current URL:", location.href, "— waiting up to 5s...");
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        await sleep(250);
+        if (location.href.includes("create/vehicle")) {
+          LOG("URL is now vehicle form, proceeding.");
+          break;
+        }
+      }
+      if (!location.href.includes("create/vehicle")) {
+        LOG("WARNING: URL did not reach create/vehicle after 5s — aborting fill. Current URL:", location.href);
+        return;
+      }
+      await sleep(500); // small extra settle after navigation
+    }
+
     const payload = await getListingFromBackground();
     LOG("Background payload:", payload);
 
