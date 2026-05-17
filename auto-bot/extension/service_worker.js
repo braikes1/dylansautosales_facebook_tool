@@ -86,80 +86,127 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
       if (tabId !== tab.id || info.status !== "complete") return;
       chrome.tabs.onUpdated.removeListener(onUpdated);
 
-      // Wait 5s for JS-rendered inventory to fully populate
-      await new Promise(r => setTimeout(r, 5000));
-
-      // ── Cookie / GDPR banner dismiss ──────────────────────────────────────
-      // Many dealer sites show a consent popup that blocks the page and stops
-      // images from loading. Click the most common "accept" button.
+      // ── Step 1: Cookie / GDPR banner dismiss ───────────────────────────────
+      // Do this FIRST — banners block JS execution and image loading.
+      // Dismiss immediately on page-complete, before any wait.
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           func: () => {
-            const ACCEPT_RE = /\b(accept\s*(all)?|i\s*agree|got\s*it|ok\b|allow\s*(all)?|continue|close)\b/i;
-            // Look for buttons / links / divs that look like consent-accept actions
+            const ACCEPT_RE = /\b(accept\s*(all(\s*cookies)?)?|i\s*agree|got\s*it|ok\b|allow\s*(all)?|continue|agree\s*&?\s*proceed|close|dismiss|yes,?\s*i\s*accept)\b/i;
+            const REJECT_RE = /\b(reject|decline|refuse|no\s*thanks|manage\s*(preferences|settings)|customize)\b/i;
             const candidates = Array.from(
-              document.querySelectorAll('button,a,[role="button"],[id*="consent"],[id*="cookie"],[class*="consent"],[class*="cookie"]')
+              document.querySelectorAll(
+                'button,a,[role="button"],[id*="consent"],[id*="cookie"],[class*="consent"],[class*="cookie"],[id*="gdpr"],[class*="gdpr"],[id*="privacy-banner"],[class*="privacy-banner"]'
+              )
             );
             for (const el of candidates) {
               const txt = (el.textContent || el.getAttribute("aria-label") || el.value || "").trim();
+              if (REJECT_RE.test(txt)) continue; // never click Reject/Decline
               if (ACCEPT_RE.test(txt)) {
                 const r = el.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) {
                   el.click();
-                  return `dismissed: ${txt}`;
+                  return `dismissed: "${txt}"`;
                 }
               }
             }
-            return "no banner found";
+            return "no banner";
           },
         });
-        await new Promise(r => setTimeout(r, 800)); // let page settle after dismiss
-      } catch {
-        // Non-fatal
+        // Short settle — banner animation + JS teardown
+        await new Promise(r => setTimeout(r, 600));
+      } catch { /* non-fatal */ }
+
+      // ── Step 2: Signal-based wait for vehicle content ──────────────────────
+      // Poll every 500ms for up to 10s waiting for vehicle-specific signals:
+      //   - A 17-char VIN in the page text
+      //   - A price pattern ($XX,XXX)
+      //   - A vehicle title matching "YYYY Make Model"
+      //   - OR at least 4 gallery-sized images (≥300px)
+      // This eliminates the flat-wait race condition — we proceed as soon as
+      // the page has meaningful content, never earlier, never later than 10s.
+      const CONTENT_TIMEOUT = 10000;
+      const POLL_INTERVAL   = 500;
+      const contentStart = Date.now();
+      let contentReady = false;
+
+      while (Date.now() - contentStart < CONTENT_TIMEOUT) {
+        try {
+          const [check] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => {
+              const text = document.body.innerText || "";
+              const hasVIN   = /\b[A-HJ-NPR-Z0-9]{17}\b/.test(text);
+              const hasPrice = /\$\s*\d[\d,]{3,}/.test(text);
+              const hasTitle = /\b(19|20)\d{2}\s+[A-Z][a-zA-Z\-]+\s+[A-Za-z0-9\-]+/.test(text);
+              const galleryImgs = Array.from(document.querySelectorAll("img"))
+                .filter(i => (i.naturalWidth || i.width || 0) >= 300).length;
+              return { hasVIN, hasPrice, hasTitle, galleryImgs };
+            },
+          });
+          const s = check?.result || {};
+          console.log("[sw] content poll:", s, `(${Date.now() - contentStart}ms)`);
+          if (s.hasVIN || s.hasPrice || s.hasTitle || s.galleryImgs >= 4) {
+            contentReady = true;
+            console.log("[sw] content signals found — proceeding");
+            break;
+          }
+        } catch { /* tab may still be loading — keep polling */ }
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
       }
 
-      // ── Gallery scroll trigger ─────────────────────────────────────────────
-      // Scroll slowly down the page to trigger intersection-observer / lazy-load
-      // on dealer gallery carousels, then scroll back to top.
+      if (!contentReady) {
+        console.log("[sw] content timeout after 10s — scraping whatever is loaded");
+      }
+
+      // ── Step 3: Viewport scroll to trigger lazy-loaded gallery images ───────
+      // Now that content is confirmed (or timeout), scroll to trigger any
+      // intersection-observer-based lazy loading. We await the full scroll
+      // duration synchronously using a Promise that resolves when done.
       try {
         await chrome.scripting.executeScript({
           target: { tabId: tab.id },
-          func: () => {
+          func: () => new Promise(resolve => {
             const total = document.body.scrollHeight;
-            const step = 400;
+            const step  = 600;
             let pos = 0;
-            const scroll = () => {
-              pos += step;
+            const tick = () => {
+              pos = Math.min(pos + step, total);
               window.scrollTo(0, pos);
-              if (pos < total) setTimeout(scroll, 80);
-              else window.scrollTo(0, 0);
+              if (pos < total) {
+                requestAnimationFrame(tick);
+              } else {
+                // Scroll back to top so the scrape captures the full page
+                setTimeout(() => { window.scrollTo(0, 0); resolve(); }, 300);
+              }
             };
-            scroll();
-          },
+            tick();
+          }),
+          world: "MAIN", // needs access to page's rAF
         });
-        await new Promise(r => setTimeout(r, 2500)); // wait for lazy images to load
-      } catch {
-        // Non-fatal
-      }
+        // Wait for lazy images triggered by scroll to actually load
+        await new Promise(r => setTimeout(r, 2000));
+      } catch { /* non-fatal */ }
 
-      // ── Smart retry: count gallery-sized images (≥200px wide) ───────────────
-      // Total img count includes icons/logos; only large images are vehicle photos.
+      // ── Step 4: Gallery readiness check with one retry ─────────────────────
+      // After scroll, count gallery-sized images. If still too few,
+      // wait 3 more seconds (covers sites with slow CDN response).
       try {
-        const [galleryCountInj] = await chrome.scripting.executeScript({
+        const [gc] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           func: () => Array.from(document.querySelectorAll("img"))
             .filter(i => (i.naturalWidth || i.width || 0) >= 200).length,
         });
-        const galleryCount = galleryCountInj?.result ?? 0;
-        if (galleryCount <= 3) {
-          console.log("[sw] Only", galleryCount, "gallery images after scroll — waiting 3s more...");
+        const galleryCount = gc?.result ?? 0;
+        console.log("[sw] gallery images after scroll:", galleryCount);
+        if (galleryCount < 4) {
+          console.log("[sw] low gallery count — waiting 3s more");
           await new Promise(r => setTimeout(r, 3000));
         }
-      } catch {
-        // Non-fatal
-      }
+      } catch { /* non-fatal */ }
 
+      // ── Step 5: Scrape HTML + images ───────────────────────────────────────
       try {
         const [inj] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -168,12 +215,12 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
             const url  = location.href;
             const abs  = (u) => { try { return u ? new URL(u, location.href).href : null; } catch { return null; } };
 
-            // Build a set of src values that appear inside <video> elements
-            // so we can exclude them from the image list.
+            // Exclude images that belong to <video> elements
             const videoSrcs = new Set();
             document.querySelectorAll("video").forEach(v => {
               [v.src, v.getAttribute("poster"), v.getAttribute("data-src")]
-                .filter(Boolean).forEach(s => { try { videoSrcs.add(new URL(s, location.href).href); } catch {} });
+                .filter(Boolean)
+                .forEach(s => { try { videoSrcs.add(new URL(s, location.href).href); } catch {} });
               v.querySelectorAll("source").forEach(src => {
                 const s = src.getAttribute("src");
                 if (s) { try { videoSrcs.add(new URL(s, location.href).href); } catch {} }
@@ -186,18 +233,22 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
               .map(img => {
                 const raw = img.currentSrc || img.getAttribute("src") || img.getAttribute("data-src") ||
                             img.getAttribute("data-lazy") || img.getAttribute("data-original") || "";
-                return { src: abs(raw), alt: img.alt || "", width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 };
+                return {
+                  src:    abs(raw),
+                  alt:    img.alt || "",
+                  width:  img.naturalWidth  || img.width  || 0,
+                  height: img.naturalHeight || img.height || 0,
+                };
               })
               .filter(i => {
-                if (!i.src) return false;
-                // Drop video-sourced images
-                if (videoSrcs.has(i.src)) return false;
-                if (VIDEO_URL_RE.test(i.src)) return false;
-                // Drop images smaller than 200×200 (icons, thumbnails, logos)
-                if (i.width > 0 && i.width < 200) return false;
-                if (i.height > 0 && i.height < 200) return false;
+                if (!i.src)                              return false;
+                if (videoSrcs.has(i.src))                return false;
+                if (VIDEO_URL_RE.test(i.src))            return false;
+                if (i.width  > 0 && i.width  < 200)     return false;
+                if (i.height > 0 && i.height < 200)     return false;
                 return true;
               });
+
             return { url, html, images };
           },
         });
