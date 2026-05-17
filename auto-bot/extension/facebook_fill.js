@@ -182,7 +182,7 @@
     );
 
     const lowerMatch = (txt) =>
-      (txt || "").toLowerCase().includes("Year"); // <-- fix: "year" lower-case
+      (txt || "").toLowerCase().includes("year");
 
     for (const el of candidates) {
       const al = (el.getAttribute("aria-label") || "").toLowerCase();
@@ -200,7 +200,7 @@
       scope.querySelectorAll("label,div,span,strong")
     ).filter((n) => {
       const t = (n.textContent || "").trim().toLowerCase();
-      return t === "year" || t.includes("Year");
+      return t === "year" || t.includes("year");
     });
 
     for (const lab of labels) {
@@ -315,8 +315,52 @@
     return null;
   }
 
-  async function selectVehicleTypeOther(scope) {
-    const targetText = "Other";
+  async function selectVehicleType(scope, vehicleType) {
+    // Map common dealer body-type strings to Facebook Marketplace dropdown labels.
+    // FB options (as of 2024): Sedan, SUV, Truck, Minivan, Van, Coupe, Convertible,
+    //   Wagon, Hatchback, Other
+    const FB_TYPE_MAP = {
+      sedan:       "Sedan",
+      suv:         "SUV",
+      "sport utility": "SUV",
+      "sport utility vehicle": "SUV",
+      crossover:   "SUV",
+      truck:       "Truck",
+      pickup:      "Truck",
+      "pickup truck": "Truck",
+      minivan:     "Minivan",
+      van:         "Van",
+      cargo:       "Van",
+      coupe:       "Coupe",
+      convertible: "Convertible",
+      cabriolet:   "Convertible",
+      roadster:    "Convertible",
+      wagon:       "Wagon",
+      "station wagon": "Wagon",
+      hatchback:   "Hatchback",
+      hatch:       "Hatchback",
+    };
+
+    // Resolve the target FB label from the dealer's body type string
+    const raw = (vehicleType || "").trim().toLowerCase();
+    let targetText = "Other"; // safe fallback
+
+    if (raw) {
+      // Exact match first
+      if (FB_TYPE_MAP[raw]) {
+        targetText = FB_TYPE_MAP[raw];
+      } else {
+        // Partial match — find first FB_TYPE_MAP key that appears in the raw string
+        for (const [key, label] of Object.entries(FB_TYPE_MAP)) {
+          if (raw.includes(key)) {
+            targetText = label;
+            break;
+          }
+        }
+      }
+    }
+
+    LOG("Vehicle type:", raw, "->", targetText);
 
     const vtField = findVehicleTypeField(scope);
     if (!vtField) {
@@ -348,7 +392,19 @@
     }
 
     if (!option) {
-      LOG("Vehicle type option 'Other' not found");
+      LOG("Vehicle type option not found for:", targetText, "- falling back to Other");
+      // Try "Other" as a last resort
+      for (const lb of listboxes) {
+        const opts = Array.from(lb.querySelectorAll('[role="option"]'));
+        const fallback = opts.find((o) =>
+          (o.textContent || "").trim().toLowerCase() === "other"
+        );
+        if (fallback) {
+          fallback.scrollIntoView({ block: "nearest" });
+          fallback.click();
+          break;
+        }
+      }
     } else {
       await sleep(200);
     }
@@ -421,7 +477,7 @@
 
   function normalizeListing(listingRaw) {
     // listingRaw from your logs looks like:
-    // { title, year, make, model, price, description, ... }
+    // { title, year, make, model, price, description, bodyType, ... }
     if (!listingRaw) listingRaw = {};
 
     const title =
@@ -454,6 +510,16 @@
       listingRaw.description ||
       "";
 
+    // Vehicle type / body type — panel.js sends camelCase "bodyType";
+    // the API returns "Body Type" (with space).
+    const vehicleType =
+      listingRaw["Body Type"] ||
+      listingRaw.bodyType ||
+      listingRaw.vehicleType ||
+      listingRaw["Vehicle Type"] ||
+      listingRaw.vehicle_type ||
+      "";
+
     const normalized = {
       Title: title,
       Year: year,
@@ -461,6 +527,7 @@
       Model: model,
       Price: price,
       Description: description,
+      VehicleType: vehicleType,
     };
 
     LOG("Using normalized listing:", normalized);
@@ -584,7 +651,7 @@
       return;
     }
 
-    await selectVehicleTypeOther(composer)
+    await selectVehicleType(composer, listing.VehicleType)
 
     // Price
     if (listing.Price) {
