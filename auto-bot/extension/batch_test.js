@@ -3,6 +3,44 @@
 // scores field extraction, and displays a full report in the panel.
 
 const BATCH_DEALER_URLS = [
+  // ========================================
+  // SOUTH FLORIDA DEALERS (Bryan's Network)
+  // ========================================
+  // Coral Springs Auto Mall
+  "https://www.coralspringsautomall.com/new-inventory/index.htm",
+  
+  // Rick Case Automotive Group
+  "https://www.rickcasehonda.com/new-inventory/index.htm",
+  "https://www.rickcasehyundai.com/new-inventory/index.htm",
+  "https://www.rickcaseacura.com/new-inventory/index.htm",
+  "https://www.rickcasevw.com/new-inventory/index.htm",
+  "https://www.rickcasealfaromeo.com/new-inventory/index.htm",
+  "https://www.rickcasemazda.com/new-inventory/index.htm",
+  "https://www.rickcasemitsubishi.com/new-inventory/index.htm",
+  
+  // Toyota of Coconut Creek
+  "https://www.toyotaofcoconutcreek.com/new-inventory/index.htm",
+  
+  // Braman Motors (Miami Luxury)
+  "https://www.bramanbmw.com/new-inventory/index.htm",
+  "https://www.bramanmiamibmw.com/new-inventory/index.htm",
+  "https://www.bramanmercedes.com/new-inventory/index.htm",
+  "https://www.bramanporsche.com/new-inventory/index.htm",
+  "https://www.bramanbentley.com/new-inventory/index.htm",
+  "https://www.bramanhondapalmbeach.com/new-inventory/index.htm",
+  
+  // Phil Smith Automotive Group
+  "https://www.philsmithford.com/new-inventory/index.htm",
+  "https://www.philsmithtoyota.com/new-inventory/index.htm",
+  "https://www.philsmithnissan.com/new-inventory/index.htm",
+  "https://www.philsmithkia.com/new-inventory/index.htm",
+  
+  // Holman Honda
+  "https://www.holmanhonda.com/new-inventory/index.htm",
+  
+  // ========================================
+  // NATIONAL TEST DEALERS
+  // ========================================
   // Mercedes-Benz
   "https://www.mboftampa.com/new-inventory/index.htm",
   "https://www.mbofbeverlyhills.com/new-inventory/index.htm",
@@ -77,15 +115,10 @@ const SCORED_FIELDS = [
 
 const API_BASE    = "https://dylansautosales-facebook-tool.onrender.com";
 const API_EXTRACT = `${API_BASE}/fb/extract_html`;
-const DELAY_MS    = 3000; // base delay between tabs (jitter added at runtime)
+const DELAY_MS    = 3000; // 3s between tabs to avoid hammering
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
-}
-
-// Human-like jitter so batch requests don't look perfectly periodic
-function jitter(base = DELAY_MS, spread = 2000) {
-  return base + Math.floor(Math.random() * spread);
 }
 
 function scoreResult(fields) {
@@ -132,7 +165,7 @@ export async function runBatchTest(onProgress, onComplete) {
     results.push(result);
 
     onProgress({ current: i + 1, total, url, status: result.status, pct: result.pct });
-    await sleep(jitter());
+    await sleep(DELAY_MS);
   }
 
   onComplete(results);
