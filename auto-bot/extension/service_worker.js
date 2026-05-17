@@ -76,13 +76,37 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
             const html = document.documentElement.outerHTML;
             const url  = location.href;
             const abs  = (u) => { try { return u ? new URL(u, location.href).href : null; } catch { return null; } };
+
+            // Build a set of src values that appear inside <video> elements
+            // so we can exclude them from the image list.
+            const videoSrcs = new Set();
+            document.querySelectorAll("video").forEach(v => {
+              [v.src, v.getAttribute("poster"), v.getAttribute("data-src")]
+                .filter(Boolean).forEach(s => { try { videoSrcs.add(new URL(s, location.href).href); } catch {} });
+              v.querySelectorAll("source").forEach(src => {
+                const s = src.getAttribute("src");
+                if (s) { try { videoSrcs.add(new URL(s, location.href).href); } catch {} }
+              });
+            });
+
+            const VIDEO_URL_RE = /video|\.mp4|blob:|\/play\b/i;
+
             const images = Array.from(document.querySelectorAll("img"))
               .map(img => {
                 const raw = img.currentSrc || img.getAttribute("src") || img.getAttribute("data-src") ||
                             img.getAttribute("data-lazy") || img.getAttribute("data-original") || "";
                 return { src: abs(raw), alt: img.alt || "", width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 };
               })
-              .filter(i => i.src);
+              .filter(i => {
+                if (!i.src) return false;
+                // Drop video-sourced images
+                if (videoSrcs.has(i.src)) return false;
+                if (VIDEO_URL_RE.test(i.src)) return false;
+                // Drop images smaller than 200×200 (icons, thumbnails, logos)
+                if (i.width > 0 && i.width < 200) return false;
+                if (i.height > 0 && i.height < 200) return false;
+                return true;
+              });
             return { url, html, images };
           },
         });
