@@ -6,8 +6,11 @@
 //
 // This script:
 //   - Uses the *real* listing data (no more Toyota/Camry defaults)
-//   - Fills Price, Make, Model, Year (dropdown/combobox), and Description
+//   - Fills: Vehicle Type, Price, Mileage, Make, Model, Year, Body Style,
+//            Exterior Color, Interior Color, Condition, Fuel Type, Clean Title,
+//            and Description
 //   - Handles React-style inputs + contenteditable fields
+//   - Mileage defaults to 300 when blank (FB requires a value; new cars have 0)
 
 (() => {
   if (window.__fbFillInjected) return;
@@ -152,6 +155,58 @@
     return null;
   }
 
+  // Find a combobox/combobox-like element by label keywords
+  function findComboboxByLabels(labels, scope = document) {
+    const lower = labels.map((l) => l.toLowerCase());
+
+    // 1) Look for [role="combobox"] or [role="listbox"] elements
+    const combos = Array.from(
+      scope.querySelectorAll('[role="combobox"],[role="button"],[role="textbox"],input')
+    );
+
+    for (const el of combos) {
+      const al = (el.getAttribute("aria-label") || "").toLowerCase();
+      const ph = (el.getAttribute("placeholder") || "").toLowerCase();
+      const id = (el.id || "").toLowerCase();
+      const name = (el.getAttribute("name") || "").toLowerCase();
+
+      if (lower.some((lbl) =>
+        al === lbl || al.includes(lbl) ||
+        ph === lbl || ph.includes(lbl) ||
+        id === lbl || id.includes(lbl) ||
+        name === lbl || name.includes(lbl)
+      )) {
+        const r = el.getBoundingClientRect();
+        if (r.width && r.height) return el;
+      }
+    }
+
+    // 2) Look for visible label text near comboboxes
+    const labelNodes = Array.from(
+      scope.querySelectorAll("label,div,span,strong,legend")
+    ).filter((n) => {
+      const t = (n.textContent || "").trim().toLowerCase();
+      return lower.some((lbl) => t === lbl || t.startsWith(lbl) || t.includes(lbl));
+    });
+
+    for (const lab of labelNodes) {
+      const container =
+        lab.closest(
+          'form,[role="group"],[data-visualcompletion],section,div,[aria-labelledby]'
+        ) || lab.parentElement;
+      if (!container) continue;
+      const combo = container.querySelector(
+        '[role="combobox"],[role="button"],input'
+      );
+      if (combo && combo !== lab) {
+        const r = combo.getBoundingClientRect();
+        if (r.width && r.height) return combo;
+      }
+    }
+
+    return null;
+  }
+
   async function waitForComposer(scope = document, timeout = 20000) {
     const start = Date.now();
     const selectors = [
@@ -173,10 +228,90 @@
     return null;
   }
 
+  // ---------- Generic dropdown selector ----------
+  // Opens a combobox and picks the option whose text best matches targetValue.
+  // labelKeywords: array of strings to find the field (e.g. ["year"], ["make"])
+  // targetValue:   the value to select (e.g. "2021", "Toyota", "Sedan")
+  // typeToFilter:  whether to type targetValue into the field first to filter options
+
+  async function selectDropdownOption(scope, labelKeywords, targetValue, typeToFilter = false) {
+    const val = String(targetValue || "").trim();
+    if (!val) {
+      LOG("selectDropdownOption: no value for", labelKeywords);
+      return false;
+    }
+
+    // Find the field
+    const field = findComboboxByLabels(labelKeywords, scope)
+      || findInputByLabels(labelKeywords, scope);
+
+    if (!field) {
+      LOG("selectDropdownOption: field not found for", labelKeywords);
+      return false;
+    }
+
+    LOG("selectDropdownOption: field found for", labelKeywords, field);
+
+    // Open the dropdown
+    field.focus?.();
+    field.click();
+    await sleep(300);
+
+    // Optionally type to filter options (useful for Make / Model)
+    if (typeToFilter) {
+      setNativeValue(field, val);
+      fireInputEvents(field);
+      await sleep(400);
+    }
+
+    // Find the matching option in any open listbox
+    const valLower = val.toLowerCase();
+    let picked = false;
+
+    const listboxes = Array.from(document.querySelectorAll('[role="listbox"]'));
+    for (const lb of listboxes) {
+      const opts = Array.from(lb.querySelectorAll('[role="option"]'));
+
+      // Try exact match first
+      let option = opts.find((o) =>
+        (o.textContent || "").trim().toLowerCase() === valLower
+      );
+      // Fall back to starts-with
+      if (!option) {
+        option = opts.find((o) =>
+          (o.textContent || "").trim().toLowerCase().startsWith(valLower)
+        );
+      }
+      // Fall back to includes
+      if (!option) {
+        option = opts.find((o) =>
+          (o.textContent || "").trim().toLowerCase().includes(valLower)
+        );
+      }
+
+      if (option) {
+        LOG("selectDropdownOption: picked option", option.textContent.trim(), "for", labelKeywords);
+        option.scrollIntoView({ block: "nearest" });
+        option.click();
+        await sleep(250);
+        picked = true;
+        break;
+      }
+    }
+
+    if (!picked) {
+      LOG("selectDropdownOption: no option matched", val, "for", labelKeywords);
+      // Press Escape to close any open listbox cleanly
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await sleep(100);
+    }
+
+    return picked;
+  }
+
   // ---------- Special: Year finder (dropdown / combobox) ----------
 
   function findYearField(scope) {
-    // Look for Year-related inputs/comboboxes
     const candidates = Array.from(
       scope.querySelectorAll('input,textarea,[role="combobox"],[role="textbox"]')
     );
@@ -224,38 +359,42 @@
   async function selectYearFromDropdown(scope, yearValue) {
     const yearStr = String(yearValue || "").trim();
     if (!yearStr) {
-      console.log("[fb-fill] No year value provided");
+      LOG("No year value provided");
       return;
     }
 
     const yearField = findYearField(scope);
     if (!yearField) {
-      console.log("[fb-fill] Year field not found");
+      LOG("Year field not found");
       return;
     }
 
-    console.log("[fb-fill] Year field:", yearField);
+    LOG("Year field:", yearField);
 
-    // 1) Click the combobox/label to open the dropdown
+    // Click to open, then type to filter to this year
     yearField.click();
     yearField.focus?.();
+    await sleep(300);
 
-    // Give FB time to render the year list
-    await new Promise((r) => setTimeout(r, 400));
+    // Type the year to filter the dropdown
+    setNativeValue(yearField, yearStr);
+    fireInputEvents(yearField);
+    await sleep(400);
 
-    // 2) Find the listbox that contains the year options
-    //    (Marketplace uses role="listbox" + role="option" for each year)
+    // Find the option in any open listbox
     const listboxes = Array.from(document.querySelectorAll('[role="listbox"]'));
     let option = null;
 
     for (const lb of listboxes) {
       const opts = Array.from(lb.querySelectorAll('[role="option"]'));
-      option = opts.find((o) => {
-        const txt = (o.textContent || "").trim();
-        return txt === yearStr || txt.includes(yearStr);
-      });
+      // Exact match first
+      option = opts.find((o) => (o.textContent || "").trim() === yearStr);
+      // Then includes
+      if (!option) {
+        option = opts.find((o) => (o.textContent || "").trim().includes(yearStr));
+      }
       if (option) {
-        console.log("[fb-fill] Found year option:", option.textContent.trim());
+        LOG("Found year option:", option.textContent.trim());
         option.scrollIntoView({ block: "nearest" });
         option.click();
         break;
@@ -263,10 +402,9 @@
     }
 
     if (!option) {
-      console.log("[fb-fill] Year option not found for:", yearStr);
+      LOG("Year option not found for:", yearStr);
     } else {
-      // Small delay to let selection register
-      await new Promise((r) => setTimeout(r, 200));
+      await sleep(200);
     }
   }
 
@@ -319,6 +457,7 @@
     // Facebook Marketplace "Vehicle type" dropdown has exactly these options:
     //   Car/Truck, Motorcycle, RV/Camper, Boat, Powersports, Other
     // Almost every standard dealer vehicle = "Car/Truck".
+    // SUV, Sedan, Truck, Coupe, etc. all map to "Car/Truck".
     const FB_TYPE_MAP = {
       // Standard passenger vehicles → Car/Truck
       sedan:              "Car/Truck",
@@ -362,7 +501,7 @@
       pwc:                "Powersports",
     };
 
-    // Default to Car/Truck for any unrecognised dealer body type — it's right 95% of the time
+    // Default to Car/Truck for any unrecognised dealer body type — right 95% of the time
     const raw = (vehicleType || "").trim().toLowerCase();
     let targetText = "Car/Truck";
 
@@ -492,11 +631,180 @@
     return null;
   }
 
+  // ---------- Color normalizer ----------
+  // Facebook's color dropdown uses simple color names.
+  // This maps common dealer color strings to FB-friendly values.
+  function normalizeColor(raw) {
+    if (!raw) return "";
+    const r = raw.toLowerCase();
+    // Common multi-word → simple name
+    const MAP = {
+      "jet black":        "Black",
+      "pearl white":      "White",
+      "pearl":            "White",
+      "oxford white":     "White",
+      "arctic white":     "White",
+      "super white":      "White",
+      "alpine white":     "White",
+      "brilliant black":  "Black",
+      "midnight black":   "Black",
+      "phantom black":    "Black",
+      "tuxedo black":     "Black",
+      "deep blue":        "Blue",
+      "navy blue":        "Blue",
+      "midnight blue":    "Blue",
+      "steel blue":       "Blue",
+      "dark blue":        "Blue",
+      "bright blue":      "Blue",
+      "cobalt blue":      "Blue",
+      "silver ice":       "Silver",
+      "blade silver":     "Silver",
+      "lunar silver":     "Silver",
+      "ingot silver":     "Silver",
+      "sonic silver":     "Silver",
+      "sterling gray":    "Gray",
+      "magnetic gray":    "Gray",
+      "dark gray":        "Gray",
+      "machine gray":     "Gray",
+      "charcoal":         "Gray",
+      "graphite":         "Gray",
+      "shadow gray":      "Gray",
+      "rapid red":        "Red",
+      "ruby red":         "Red",
+      "deep cherry":      "Red",
+      "crimson red":      "Red",
+      "inferno red":      "Red",
+      "hot lava":         "Red",
+      "lava red":         "Red",
+      "hunter green":     "Green",
+      "forest green":     "Green",
+      "midnight green":   "Green",
+      "dark green":       "Green",
+      "cyber gray":       "Gray",
+      "summit white":     "White",
+      "iridescent pearl": "White",
+      "off white":        "White",
+      "cream":            "White",
+      "beige":            "Beige",
+      "tan":              "Tan",
+      "brown":            "Brown",
+      "dark chocolate":   "Brown",
+      "mocha":            "Brown",
+      "champagne":        "Gold",
+      "gold":             "Gold",
+      "yellow":           "Yellow",
+      "orange":           "Orange",
+      "purple":           "Purple",
+      "maroon":           "Maroon",
+      "burgundy":         "Maroon",
+    };
+
+    for (const [key, val] of Object.entries(MAP)) {
+      if (r.includes(key)) return val;
+    }
+
+    // Single-word: capitalize first letter
+    const simple = raw.trim();
+    return simple.charAt(0).toUpperCase() + simple.slice(1).toLowerCase();
+  }
+
+  // ---------- Condition normalizer ----------
+  function normalizeCondition(raw) {
+    const r = (raw || "").toLowerCase();
+    if (r.includes("excellent") || r.includes("like new")) return "Excellent";
+    if (r.includes("good"))       return "Good";
+    if (r.includes("fair"))       return "Fair";
+    if (r.includes("poor"))       return "Poor";
+    if (r.includes("new"))        return "Excellent"; // new cars → Excellent
+    return "Good"; // safe default
+  }
+
+  // ---------- Fuel type normalizer ----------
+  function normalizeFuelType(raw) {
+    const r = (raw || "").toLowerCase();
+    if (r.includes("electric") || r.includes("ev") || r.includes("bev")) return "Electric";
+    if (r.includes("hybrid") && r.includes("plug")) return "Plug-in Hybrid";
+    if (r.includes("hybrid"))   return "Hybrid";
+    if (r.includes("diesel"))   return "Diesel";
+    if (r.includes("gas") || r.includes("gasoline") || r.includes("petrol")) return "Gasoline";
+    return "Gasoline"; // safest default
+  }
+
+  // ---------- Clean title checkbox ----------
+  async function checkCleanTitle(scope) {
+    // Look for a checkbox labelled "Clean title"
+    const labels = Array.from(
+      scope.querySelectorAll("label,div,span,strong")
+    ).filter((n) => {
+      const t = (n.textContent || "").trim().toLowerCase();
+      return t === "clean title" || t.includes("clean title");
+    });
+
+    for (const lab of labels) {
+      // Look for a checkbox sibling or child
+      const container = lab.closest('label,[role="checkbox"],div') || lab.parentElement;
+      if (!container) continue;
+
+      // Try direct checkbox
+      let cb = container.querySelector('input[type="checkbox"]');
+      if (!cb) {
+        // Try [role="checkbox"]
+        cb = container.querySelector('[role="checkbox"]');
+      }
+      if (!cb && lab.tagName === "LABEL") {
+        // The label itself may wrap the checkbox
+        cb = lab.querySelector('input[type="checkbox"]');
+      }
+      if (cb) {
+        const r = cb.getBoundingClientRect();
+        if (r.width >= 0 && r.height >= 0) {
+          LOG("Clean title checkbox found:", cb);
+          if (!cb.checked) {
+            cb.click();
+            await sleep(100);
+          }
+          return true;
+        }
+      }
+    }
+
+    // Fallback: search entire document for a "clean title" checkbox
+    const allCheckboxes = Array.from(
+      scope.querySelectorAll('input[type="checkbox"],[role="checkbox"]')
+    );
+    for (const cb of allCheckboxes) {
+      const al = (cb.getAttribute("aria-label") || "").toLowerCase();
+      const id = (cb.id || "").toLowerCase();
+      if (al.includes("clean") || id.includes("clean")) {
+        LOG("Clean title checkbox (aria/id match):", cb);
+        if (!cb.checked) {
+          cb.click();
+          await sleep(100);
+        }
+        return true;
+      }
+      // Check nearby label text
+      const lbl = cb.closest("label") || document.querySelector(`label[for="${cb.id}"]`);
+      if (lbl && (lbl.textContent || "").toLowerCase().includes("clean")) {
+        LOG("Clean title checkbox (label match):", cb);
+        if (!cb.checked) {
+          cb.click();
+          await sleep(100);
+        }
+        return true;
+      }
+    }
+
+    LOG("Clean title checkbox not found");
+    return false;
+  }
+
   // ---------- Listing data from background ----------
 
   function normalizeListing(listingRaw) {
-    // listingRaw from your logs looks like:
-    // { title, year, make, model, price, description, bodyType, ... }
+    // listingRaw from panel.js sendToFacebookFromDetail:
+    // { title, year, make, model, price, mileage, vin, bodyType,
+    //   exteriorColor, interiorColor, description, images, sourceUrl }
     if (!listingRaw) listingRaw = {};
 
     const title =
@@ -529,8 +837,7 @@
       listingRaw.description ||
       "";
 
-    // Vehicle type / body type — panel.js sends camelCase "bodyType";
-    // the API returns "Body Type" (with space).
+    // Vehicle type / body type
     const vehicleType =
       listingRaw["Body Type"] ||
       listingRaw.bodyType ||
@@ -539,13 +846,40 @@
       listingRaw.vehicle_type ||
       "";
 
-    // Mileage — strip non-numeric suffix for FB's numeric input field
+    // Mileage — strip non-numeric suffix for FB's numeric input field.
+    // Default to 300 if blank or zero: new cars have 0 but FB requires a value.
     const mileageRaw =
       listingRaw.Mileage ||
       listingRaw.mileage ||
       "";
-    // FB mileage field wants a plain number (e.g. "54233"), not "54,233 miles"
-    const mileage = String(mileageRaw).replace(/[^\d]/g, "") || "";
+    const mileageParsed = parseInt(String(mileageRaw).replace(/[^\d]/g, "") || "0", 10);
+    const mileage = String(Math.max(mileageParsed, 300));
+
+    // Colors
+    const exteriorColor =
+      listingRaw["Exterior Color"] ||
+      listingRaw.exteriorColor ||
+      listingRaw.exterior_color ||
+      "";
+
+    const interiorColor =
+      listingRaw["Interior Color"] ||
+      listingRaw.interiorColor ||
+      listingRaw.interior_color ||
+      "";
+
+    // Condition — not always in the listing; default to "Good"
+    const conditionRaw =
+      listingRaw.Condition ||
+      listingRaw.condition ||
+      "";
+
+    // Fuel type
+    const fuelTypeRaw =
+      listingRaw["Fuel Type"] ||
+      listingRaw.fuelType ||
+      listingRaw.fuel_type ||
+      "";
 
     const normalized = {
       Title: title,
@@ -556,6 +890,10 @@
       Description: description,
       VehicleType: vehicleType,
       Mileage: mileage,
+      ExteriorColor: normalizeColor(exteriorColor),
+      InteriorColor: normalizeColor(interiorColor),
+      Condition: normalizeCondition(conditionRaw),
+      FuelType: normalizeFuelType(fuelTypeRaw),
     };
 
     LOG("Using normalized listing:", normalized);
@@ -578,7 +916,7 @@
     });
   }
 
-  // ---------- IMAGE HELPERS (updated) ----------
+  // ---------- IMAGE HELPERS ----------
 
   async function fetchImagesViaBackground(urls) {
     return new Promise((resolve) => {
@@ -617,7 +955,6 @@
     ).filter((inp) => {
       const accept = (inp.getAttribute("accept") || "").toLowerCase();
       const r = inp.getBoundingClientRect();
-      // Likely visible/used input with image accept or empty accept
       return (accept.includes("image") || accept === "") && r.width >= 0 && r.height >= 0;
     });
 
@@ -658,7 +995,6 @@
         fileInput.dispatchEvent(new Event("change", { bubbles: true }));
 
         LOG(`[fb-fill] Uploaded image ${i + 1}/${fetched.length}`);
-        // Give FB time to recognize & start uploading this image
         await sleep(900);
       } catch (e) {
         LOG("[fb-fill] Failed to upload image", i, e);
@@ -679,56 +1015,94 @@
       return;
     }
 
-    await selectVehicleType(composer, listing.VehicleType)
+    // 1. Vehicle Type (Car/Truck for nearly all dealer vehicles)
+    await selectVehicleType(composer, listing.VehicleType);
+    await sleep(300);
 
-    // Price
+    // 2. Price
     if (listing.Price) {
       const priceInput = findInputByLabels(["price"], composer);
       LOG("Price input:", priceInput);
       if (priceInput) {
         await typeIntoInput(priceInput, String(listing.Price));
-        await sleep(80);
+        await sleep(100);
       }
     }
 
-    // Mileage — FB requires a number, min 300
-    if (listing.Mileage) {
+    // 3. Mileage — always fill; defaults to 300 for new/blank vehicles
+    {
       const mileageInput = findInputByLabels(["mileage", "miles"], composer);
       LOG("Mileage input:", mileageInput);
       if (mileageInput) {
-        // Enforce FB's minimum of 300 miles for new/near-new vehicles
-        const miles = Math.max(parseInt(listing.Mileage, 10) || 0, 300);
-        await typeIntoInput(mileageInput, String(miles));
-        await sleep(80);
+        await typeIntoInput(mileageInput, listing.Mileage);
+        await sleep(100);
       }
     }
 
-    // Make
+    // 4. Make — combobox: type to filter then pick
     if (listing.Make) {
-      const makeInput = findInputByLabels(["make"], composer);
-      LOG("Make input:", makeInput);
-      if (makeInput) {
-        await typeIntoInput(makeInput, String(listing.Make));
-        await sleep(80);
-      }
+      await selectDropdownOption(composer, ["make"], listing.Make, true);
+      await sleep(300);
     }
 
-    // Model
+    // 5. Model — plain text input (FB lets you type freely after Make is set)
     if (listing.Model) {
-      const modelInput = findInputByLabels(["model"], composer);
+      const modelInput = findInputByLabels(["model"], composer)
+        || findComboboxByLabels(["model"], composer);
       LOG("Model input:", modelInput);
       if (modelInput) {
         await typeIntoInput(modelInput, String(listing.Model));
-        await sleep(80);
+        await sleep(100);
       }
     }
 
-    // Year – use dedicated finder
+    // 6. Year — combobox dropdown
     if (listing.Year) {
       await selectYearFromDropdown(composer, listing.Year);
+      await sleep(300);
     }
 
-    // Description – textarea or contenteditable
+    // 7. Body style (Sedan, SUV, Truck, etc.)
+    if (listing.VehicleType) {
+      // The "Body style" field maps the *dealer* body type string directly
+      const bodyStyleLabels = ["body style", "body type", "style"];
+      await selectDropdownOption(composer, bodyStyleLabels, listing.VehicleType, false);
+      await sleep(200);
+    }
+
+    // 8. Exterior color
+    if (listing.ExteriorColor) {
+      const extColorLabels = ["exterior color", "exterior", "color", "ext. color", "outside color"];
+      await selectDropdownOption(composer, extColorLabels, listing.ExteriorColor, false);
+      await sleep(200);
+    }
+
+    // 9. Interior color
+    if (listing.InteriorColor) {
+      const intColorLabels = ["interior color", "interior", "int. color", "inside color"];
+      await selectDropdownOption(composer, intColorLabels, listing.InteriorColor, false);
+      await sleep(200);
+    }
+
+    // 10. Vehicle condition
+    {
+      const conditionLabels = ["condition", "vehicle condition"];
+      await selectDropdownOption(composer, conditionLabels, listing.Condition, false);
+      await sleep(200);
+    }
+
+    // 11. Fuel type
+    {
+      const fuelLabels = ["fuel type", "fuel", "fuel economy"];
+      await selectDropdownOption(composer, fuelLabels, listing.FuelType, false);
+      await sleep(200);
+    }
+
+    // 12. Clean title checkbox — always check by default
+    await checkCleanTitle(document);
+    await sleep(200);
+
+    // 13. Description – textarea or contenteditable
     if (listing.Description) {
       await sleep(300);
       const desc = findDescriptionEditable(document);
@@ -742,7 +1116,7 @@
       }
     }
 
-    // >>> IMAGES (unchanged call, new behavior inside helper)
+    // 14. Images
     if (listingRaw && Array.isArray(listingRaw.images) && listingRaw.images.length) {
       LOG("[fb-fill] Attempting to upload images:", listingRaw.images);
       try {
