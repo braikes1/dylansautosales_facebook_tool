@@ -66,8 +66,23 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
       if (tabId !== tab.id || info.status !== "complete") return;
       chrome.tabs.onUpdated.removeListener(onUpdated);
 
-      // Wait 3s for JS-rendered inventory to fully populate
-      await new Promise(r => setTimeout(r, 3000));
+      // Wait 5s for JS-rendered inventory to fully populate
+      await new Promise(r => setTimeout(r, 5000));
+
+      // If the page loaded very few images, wait another 3s and try once more.
+      // Some dealer sites lazy-load the gallery after the initial render.
+      try {
+        const [imgCountInj] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => document.querySelectorAll("img").length,
+        });
+        if ((imgCountInj?.result ?? 0) <= 5) {
+          console.log("[sw] Only", imgCountInj?.result, "images found after first wait — retrying in 3s...");
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      } catch {
+        // Non-fatal — proceed even if count check fails
+      }
 
       try {
         const [inj] = await chrome.scripting.executeScript({
