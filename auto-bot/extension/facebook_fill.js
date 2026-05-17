@@ -316,41 +316,60 @@
   }
 
   async function selectVehicleType(scope, vehicleType) {
-    // Map common dealer body-type strings to Facebook Marketplace dropdown labels.
-    // FB options (as of 2024): Sedan, SUV, Truck, Minivan, Van, Coupe, Convertible,
-    //   Wagon, Hatchback, Other
+    // Facebook Marketplace "Vehicle type" dropdown has exactly these options:
+    //   Car/Truck, Motorcycle, RV/Camper, Boat, Powersports, Other
+    // Almost every standard dealer vehicle = "Car/Truck".
     const FB_TYPE_MAP = {
-      sedan:       "Sedan",
-      suv:         "SUV",
-      "sport utility": "SUV",
-      "sport utility vehicle": "SUV",
-      crossover:   "SUV",
-      truck:       "Truck",
-      pickup:      "Truck",
-      "pickup truck": "Truck",
-      minivan:     "Minivan",
-      van:         "Van",
-      cargo:       "Van",
-      coupe:       "Coupe",
-      convertible: "Convertible",
-      cabriolet:   "Convertible",
-      roadster:    "Convertible",
-      wagon:       "Wagon",
-      "station wagon": "Wagon",
-      hatchback:   "Hatchback",
-      hatch:       "Hatchback",
+      // Standard passenger vehicles → Car/Truck
+      sedan:              "Car/Truck",
+      suv:                "Car/Truck",
+      "sport utility":    "Car/Truck",
+      "sport utility vehicle": "Car/Truck",
+      crossover:          "Car/Truck",
+      truck:              "Car/Truck",
+      pickup:             "Car/Truck",
+      "pickup truck":     "Car/Truck",
+      minivan:            "Car/Truck",
+      van:                "Car/Truck",
+      cargo:              "Car/Truck",
+      coupe:              "Car/Truck",
+      convertible:        "Car/Truck",
+      cabriolet:          "Car/Truck",
+      roadster:           "Car/Truck",
+      wagon:              "Car/Truck",
+      "station wagon":    "Car/Truck",
+      hatchback:          "Car/Truck",
+      hatch:              "Car/Truck",
+      car:                "Car/Truck",
+      vehicle:            "Car/Truck",
+      // Motorcycles
+      motorcycle:         "Motorcycle",
+      moto:               "Motorcycle",
+      scooter:            "Motorcycle",
+      // RV
+      rv:                 "RV/Camper",
+      camper:             "RV/Camper",
+      motorhome:          "RV/Camper",
+      "travel trailer":   "RV/Camper",
+      // Boat
+      boat:               "Boat",
+      // Powersports
+      atv:                "Powersports",
+      utv:                "Powersports",
+      "side by side":     "Powersports",
+      snowmobile:         "Powersports",
+      "personal watercraft": "Powersports",
+      pwc:                "Powersports",
     };
 
-    // Resolve the target FB label from the dealer's body type string
+    // Default to Car/Truck for any unrecognised dealer body type — it's right 95% of the time
     const raw = (vehicleType || "").trim().toLowerCase();
-    let targetText = "Other"; // safe fallback
+    let targetText = "Car/Truck";
 
     if (raw) {
-      // Exact match first
       if (FB_TYPE_MAP[raw]) {
         targetText = FB_TYPE_MAP[raw];
       } else {
-        // Partial match — find first FB_TYPE_MAP key that appears in the raw string
         for (const [key, label] of Object.entries(FB_TYPE_MAP)) {
           if (raw.includes(key)) {
             targetText = label;
@@ -392,12 +411,12 @@
     }
 
     if (!option) {
-      LOG("Vehicle type option not found for:", targetText, "- falling back to Other");
-      // Try "Other" as a last resort
+      LOG("Vehicle type option not found for:", targetText, "- falling back to Car/Truck");
+      // Try "Car/Truck" as a last resort
       for (const lb of listboxes) {
         const opts = Array.from(lb.querySelectorAll('[role="option"]'));
         const fallback = opts.find((o) =>
-          (o.textContent || "").trim().toLowerCase() === "other"
+          (o.textContent || "").trim().toLowerCase().includes("car")
         );
         if (fallback) {
           fallback.scrollIntoView({ block: "nearest" });
@@ -520,6 +539,14 @@
       listingRaw.vehicle_type ||
       "";
 
+    // Mileage — strip non-numeric suffix for FB's numeric input field
+    const mileageRaw =
+      listingRaw.Mileage ||
+      listingRaw.mileage ||
+      "";
+    // FB mileage field wants a plain number (e.g. "54233"), not "54,233 miles"
+    const mileage = String(mileageRaw).replace(/[^\d]/g, "") || "";
+
     const normalized = {
       Title: title,
       Year: year,
@@ -528,6 +555,7 @@
       Price: price,
       Description: description,
       VehicleType: vehicleType,
+      Mileage: mileage,
     };
 
     LOG("Using normalized listing:", normalized);
@@ -659,6 +687,18 @@
       LOG("Price input:", priceInput);
       if (priceInput) {
         await typeIntoInput(priceInput, String(listing.Price));
+        await sleep(80);
+      }
+    }
+
+    // Mileage — FB requires a number, min 300
+    if (listing.Mileage) {
+      const mileageInput = findInputByLabels(["mileage", "miles"], composer);
+      LOG("Mileage input:", mileageInput);
+      if (mileageInput) {
+        // Enforce FB's minimum of 300 miles for new/near-new vehicles
+        const miles = Math.max(parseInt(listing.Mileage, 10) || 0, 300);
+        await typeIntoInput(mileageInput, String(miles));
         await sleep(80);
       }
     }

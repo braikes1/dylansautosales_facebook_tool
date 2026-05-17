@@ -14,9 +14,34 @@ let state = {
   batchResults: [],
 };
 
+/* ========== TERMS OF USE (first-run) ========== */
+
+function initTerms() {
+  const overlay   = $("#terms-overlay");
+  const checkbox  = $("#termsCheckbox");
+  const acceptBtn = $("#termsAcceptBtn");
+
+  // Show overlay only if user hasn't accepted yet
+  chrome.storage.local.get("termsAccepted", (data) => {
+    if (!data.termsAccepted) {
+      overlay.hidden = false;
+    }
+  });
+
+  checkbox.addEventListener("change", () => {
+    acceptBtn.disabled = !checkbox.checked;
+  });
+
+  acceptBtn.addEventListener("click", () => {
+    chrome.storage.local.set({ termsAccepted: true });
+    overlay.hidden = true;
+  });
+}
+
 init();
 
 function init() {
+  initTerms();
   $("#scrapeBtn").addEventListener("click", scrapeCurrentPage);
   $("#backToList").addEventListener("click", () => switchView("list"));
   $("#backFromBatch").addEventListener("click", () => switchView("list"));
@@ -102,7 +127,11 @@ function renderList() {
 
     const title = document.createElement("div");
     title.className = "card-title";
-    title.textContent = v.title || "Unknown Vehicle";
+    // Build a sensible fallback from year/make/model if title is missing
+    const displayTitle = v.title ||
+      [v.year, v.make, v.model].filter(Boolean).join(" ").trim() ||
+      "Vehicle";
+    title.textContent = displayTitle;
 
     meta.appendChild(title);
     card.appendChild(img);

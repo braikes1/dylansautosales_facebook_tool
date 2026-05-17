@@ -19,13 +19,13 @@ const BATCH_DEALER_URLS = [
   "https://www.vatlandford.com/new-inventory/index.htm",
   "https://www.fordofkissimmee.com/new-inventory/index.htm",
   // Chevrolet
-  "https://www.peacockchevrolet.com/new-inventory/index.htm",
+  "https://www.stingerschevrolet.com/new-inventory/index.htm",
   "https://www.classicchevrolet.com/new-inventory/index.htm",
   // Nissan
-  "https://www.tavernanissan.com/new-inventory/index.htm",
+  "https://www.nalleynissan.com/new-inventory/index.htm",
   "https://www.nissanofchattanooga.com/new-inventory/index.htm",
   // Jeep / CDJR
-  "https://www.tavernacdjrf.com/new-inventory/index.htm",
+  "https://www.tavernachryslerdodgejeepramfiat.com/new-inventory/index.htm",
   "https://www.hendersondodge.com/new-inventory/index.htm",
   // Cadillac
   "https://www.sewellcadillac.com/new-inventory/index.htm",
@@ -37,7 +37,7 @@ const BATCH_DEALER_URLS = [
   "https://www.lexusoforlando.com/new-inventory/index.htm",
   "https://www.lexusofnashville.com/new-inventory/index.htm",
   // Acura
-  "https://www.acuraoforlando.com/new-inventory/index.htm",
+  "https://www.acuranorthscottsdale.com/new-inventory/index.htm",
   // Hyundai
   "https://www.hyundaioforlando.com/new-inventory/index.htm",
   // Kia
@@ -62,7 +62,7 @@ const BATCH_DEALER_URLS = [
   // Genesis
   "https://www.genesisoforlando.com/new-inventory/index.htm",
   // Mitsubishi
-  "https://www.mitsubishioforlando.com/new-inventory/index.htm",
+  "https://www.classicmitsubishi.com/new-inventory/index.htm",
   // AutoNation
   "https://www.autonation.com/new-cars",
   // Hendrick

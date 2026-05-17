@@ -10,6 +10,34 @@
   </head>
   <body>
     <div id="app">
+
+      <!-- TERMS OF USE OVERLAY (shown once on first install) -->
+      <div id="terms-overlay" class="terms-overlay" hidden>
+        <div class="terms-card">
+          <div class="terms-logo">
+            <div class="brand-icon" style="margin:0 auto 10px;width:40px;height:40px;border-radius:10px;">
+              <span class="logo-dot"></span>
+            </div>
+            <div class="brand-name" style="font-size:17px;text-align:center;">AutoBot</div>
+          </div>
+          <h2 class="terms-title">Before you begin</h2>
+          <div class="terms-body">
+            <p>AutoBot helps you post vehicle listings to Facebook Marketplace faster. By using this tool you agree to the following:</p>
+            <ul>
+              <li>You are responsible for ensuring all listings comply with <strong>Facebook's Commerce Policies</strong> and <strong>Terms of Service</strong>.</li>
+              <li>Only list vehicles you own or have authorization to sell.</li>
+              <li>Prices, mileage, and details must be accurate. Do not misrepresent vehicles.</li>
+              <li>AutoBot is a productivity tool — it does not post on your behalf or access your Facebook account credentials.</li>
+              <li>Dylan's Auto Sales is not liable for account actions taken by Facebook resulting from your listings.</li>
+            </ul>
+          </div>
+          <label class="terms-check">
+            <input type="checkbox" id="termsCheckbox" />
+            <span>I have read and agree to these terms</span>
+          </label>
+          <button id="termsAcceptBtn" class="primary wide" disabled>Get Started</button>
+        </div>
+      </div>
       <header class="topbar">
         <div class="brand">
           <div class="brand-icon">
