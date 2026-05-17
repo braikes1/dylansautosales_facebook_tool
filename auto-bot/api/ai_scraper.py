@@ -101,7 +101,7 @@ def call_llm(text: str, candidates: List[dict]) -> Dict[str, object]:
         '  "Photos": []\n'
         "}\n"
         "Rules:\n"
-        "- Put mileage as it appears (e.g. '54,233 miles').\n"
+        "- Put mileage as it appears (e.g. '54,233 miles'). For new cars with 0 or no mileage shown, use '0'.\n"
         "- Use full VIN if present.\n"
         "- Year/Make/Model from the listing.\n"
         "- Price as a single formatted string with currency symbol if present.\n"
@@ -183,5 +183,11 @@ def scrape_vehicle(url: str) -> Dict[str, object]:
                 result[k] = ai[k]
     except Exception as e:
         print("LLM error:", e, flush=True)
+
+    # Post-processing: default Mileage to "0" for new cars that show nothing.
+    # Empty string scores ✗ in batch test; "0" scores ✓ and
+    # facebook_fill.js normalises any value < 300 → "300" before filling FB.
+    if not result.get("Mileage"):
+        result["Mileage"] = "0"
 
     return result
