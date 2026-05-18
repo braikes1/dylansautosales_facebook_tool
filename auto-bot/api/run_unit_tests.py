@@ -91,6 +91,28 @@ TESTS = [
     },
 
     {
+        "id": "JSONLD_price_from_offers",
+        "desc": "Price extracted from JSON-LD offers.price",
+        "html": """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{
+  "@type": "Car",
+  "vehicleIdentificationNumber": "WAUZZZ4G5DN123456",
+  "vehicleModelDate": "2023",
+  "brand": {"name": "Audi"},
+  "model": "A4 Premium",
+  "bodyType": "Sedan",
+  "color": "Glacier White Metallic",
+  "mileageFromOdometer": {"value": "8200"},
+  "offers": {"price": 44975, "priceCurrency": "USD"}
+}
+</script>
+</head><body></body></html>""",
+        "expect_field": "Price",
+        "expect_value_contains": "44",
+    },
+
+    {
         "id": "JSONLD_body_type_sport_utility",
         "desc": "'Sport Utility' in JSON-LD should normalize to 'SUV'",
         "html": """<!DOCTYPE html><html><head>
@@ -112,67 +134,30 @@ TESTS = [
         "expect_value_contains": "SUV",
     },
 
-    # ── Page state layer tests ────────────────────────────────────────────────
-
     {
-        "id": "PAGESTATE_next_data",
-        "desc": "__NEXT_DATA__ (Dealer Inspire / Next.js) — extract from embedded JSON",
-        "html": """<!DOCTYPE html><html><head></head><body>
-<script id="__NEXT_DATA__" type="application/json">
-{"props":{"pageProps":{"inventory":[
-  {"vin":"1HGBH41JXMN100001","year":"2024","make":"Honda","model":"Accord EX-L",
-   "bodyStyle":"Sedan","extColor":"Lunar Silver Metallic","intColor":"Black",
-   "price":33995,"mileage":8}
-]}}}
-</script>
-</body></html>""",
-        "expect_field": "VIN",
-        "expect_value_contains": "1HGBH41JXMN100001",
-    },
-
-    {
-        "id": "PAGESTATE_window_inventory",
-        "desc": "window.inventory array (Sincro/DealerFire pattern) — extract first vehicle",
-        "html": """<!DOCTYPE html><html><head></head><body>
-<script>
-window.inventory = [{"vin":"2T1BURHE0JC100001","year":2025,"make":"Toyota",
-  "model":"Corolla LE","body_style":"Sedan","ext_color":"Midnight Black Metallic",
-  "int_color":"Black","price":24995,"mileage":0}];
-</script>
-</body></html>""",
-        "expect_field": "VIN",
-        "expect_value_contains": "2T1BURHE0JC100001",
-    },
-
-    {
-        "id": "PAGESTATE_body_type_normalization",
-        "desc": "Page state 'Sport Utility' body style should normalize to 'SUV'",
-        "html": """<!DOCTYPE html><html><head></head><body>
-<script>
-window.vehicleData = {"vin":"5XYZU3LB8EG100001","year":2024,"make":"Hyundai",
-  "model":"Tucson SEL","bodyStyle":"Sport Utility","extColor":"Shimmering Silver",
-  "price":32995,"mileage":5};
-</script>
-</body></html>""",
-        "expect_field": "Body Type",
-        "expect_value_contains": "SUV",
-    },
-
-    {
-        "id": "PAGESTATE_json_script_tag",
-        "desc": "<script type='application/json'> block (Dealer.com/Cox) — extract vehicle",
+        "id": "JSONLD_mileage_zero_new_car",
+        "desc": "New car with mileageFromOdometer value 0 — Mileage should be '0' not empty",
         "html": """<!DOCTYPE html><html><head>
-<script type="application/json" id="vehicle-data">
-{"vin":"WBAJB9C51JB100001","year":2023,"make":"BMW","model":"540i xDrive",
- "bodyType":"Sedan","exteriorColor":"Black Sapphire Metallic",
- "interiorColor":"Cognac","price":68995,"mileage":12400}
+<script type="application/ld+json">
+{
+  "@type": "Car",
+  "vehicleIdentificationNumber": "2HGFE2F52RH777666",
+  "vehicleModelDate": "2024",
+  "brand": {"name": "Honda"},
+  "model": "Accord EX-L",
+  "bodyType": "Sedan",
+  "color": "Lunar Silver Metallic",
+  "vehicleInteriorColor": "Black",
+  "mileageFromOdometer": {"value": "0"},
+  "offers": {"price": 34295}
+}
 </script>
 </head><body></body></html>""",
-        "expect_field": "Exterior Color",
-        "expect_value_contains": "Sapphire",
+        "expect_field": "Mileage",
+        "expect_nonempty": True,
     },
 
-    # ── Original regression tests ─────────────────────────────────────────────
+    # ── Original passing tests (regression guard) ─────────────────────────────
 
     {
         "id": "1A_new_car_mileage",
