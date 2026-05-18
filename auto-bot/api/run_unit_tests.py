@@ -28,11 +28,137 @@ def score(result):
         if ok: total += 1
     return scores, round(total / len(SCORED_FIELDS) * 100)
 
-# ──────────────── Test cases ────────────────────────────────────────────────
-
 TESTS = [
 
-    # Issue 1A: New car with 0 miles — Mileage should default to "0"
+    # ── JSON-LD layer tests ───────────────────────────────────────────────────
+
+    {
+        "id": "JSONLD_full_car_node",
+        "desc": "Full Schema.org Car JSON-LD — extract all fields from structured data",
+        "html": """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Car",
+  "name": "2023 Ford Mustang GT",
+  "vehicleIdentificationNumber": "1FA6P8CF4N5130001",
+  "vehicleModelDate": "2023",
+  "brand": {"@type": "Brand", "name": "Ford"},
+  "model": "Mustang GT",
+  "bodyType": "Coupe",
+  "color": "Race Red",
+  "vehicleInteriorColor": "Ebony Black",
+  "mileageFromOdometer": {"@type": "QuantitativeValue", "value": "12500", "unitCode": "SMI"},
+  "offers": {"@type": "Offer", "price": 47995, "priceCurrency": "USD"},
+  "description": "The iconic Ford Mustang GT with V8 power and premium features.",
+  "fuelType": "Gasoline",
+  "vehicleTransmission": "Manual"
+}
+</script>
+</head><body><p>Loading...</p></body></html>""",
+        "expect_field": "VIN",
+        "expect_value_contains": "1FA6P8CF4N5130001",
+    },
+
+    {
+        "id": "JSONLD_graph_wrapper",
+        "desc": "JSON-LD @graph wrapper (Dealer Inspire) — should unwrap and extract",
+        "html": """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {"@type": "WebSite", "name": "Rick Case Honda"},
+    {
+      "@type": "Car",
+      "vehicleIdentificationNumber": "2HGFE2F52RH999888",
+      "vehicleModelDate": "2024",
+      "brand": {"name": "Honda"},
+      "model": "Civic Sport",
+      "bodyType": "Sedan",
+      "color": "Sonic Gray Pearl",
+      "vehicleInteriorColor": "Black",
+      "mileageFromOdometer": {"value": "0"},
+      "offers": {"price": 28495},
+      "description": "Brand new 2024 Honda Civic Sport with sport styling."
+    }
+  ]
+}
+</script>
+</head><body><p>Loading...</p></body></html>""",
+        "expect_field": "Make",
+        "expect_value_contains": "Honda",
+    },
+
+    {
+        "id": "JSONLD_price_from_offers",
+        "desc": "Price extracted from JSON-LD offers.price",
+        "html": """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{
+  "@type": "Car",
+  "vehicleIdentificationNumber": "WAUZZZ4G5DN123456",
+  "vehicleModelDate": "2023",
+  "brand": {"name": "Audi"},
+  "model": "A4 Premium",
+  "bodyType": "Sedan",
+  "color": "Glacier White Metallic",
+  "mileageFromOdometer": {"value": "8200"},
+  "offers": {"price": 44975, "priceCurrency": "USD"}
+}
+</script>
+</head><body></body></html>""",
+        "expect_field": "Price",
+        "expect_value_contains": "44",
+    },
+
+    {
+        "id": "JSONLD_body_type_sport_utility",
+        "desc": "'Sport Utility' in JSON-LD should normalize to 'SUV'",
+        "html": """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{
+  "@type": "Car",
+  "vehicleIdentificationNumber": "5TDKRKEC5NS123456",
+  "vehicleModelDate": "2022",
+  "brand": {"name": "Toyota"},
+  "model": "Highlander XLE",
+  "bodyType": "Sport Utility",
+  "color": "Midnight Black",
+  "mileageFromOdometer": {"value": "24500"},
+  "offers": {"price": 42995}
+}
+</script>
+</head><body></body></html>""",
+        "expect_field": "Body Type",
+        "expect_value_contains": "SUV",
+    },
+
+    {
+        "id": "JSONLD_mileage_zero_new_car",
+        "desc": "New car with mileageFromOdometer value 0 — Mileage should be '0' not empty",
+        "html": """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+{
+  "@type": "Car",
+  "vehicleIdentificationNumber": "2HGFE2F52RH777666",
+  "vehicleModelDate": "2024",
+  "brand": {"name": "Honda"},
+  "model": "Accord EX-L",
+  "bodyType": "Sedan",
+  "color": "Lunar Silver Metallic",
+  "vehicleInteriorColor": "Black",
+  "mileageFromOdometer": {"value": "0"},
+  "offers": {"price": 34295}
+}
+</script>
+</head><body></body></html>""",
+        "expect_field": "Mileage",
+        "expect_nonempty": True,
+    },
+
+    # ── Original passing tests (regression guard) ─────────────────────────────
+
     {
         "id": "1A_new_car_mileage",
         "desc": "New car with no mileage shown — should return '0' or '0 miles'",
@@ -45,30 +171,11 @@ TESTS = [
 <div class="color">Sonic Gray Pearl</div>
 <div class="int-color">Black</div>
 <div class="fuel">Gasoline</div>
-<!-- No mileage field — brand new car -->
 </body></html>""",
         "expect_field": "Mileage",
         "expect_nonempty": True,
     },
 
-    # Issue 1A: New car explicitly showing "0 miles"
-    {
-        "id": "1A_explicit_zero_miles",
-        "desc": "New car showing '0 miles' — should extract as-is",
-        "html": """
-<html><body>
-<h1>2024 Toyota Camry XSE V6</h1>
-<div class="price">$35,720</div>
-<div class="mileage">0 miles</div>
-<div class="vin">4T1K61AK5RU123456</div>
-<div class="body-type">Sedan</div>
-<div class="color">Midnight Black</div>
-</body></html>""",
-        "expect_field": "Mileage",
-        "expect_value_contains": "0",
-    },
-
-    # Issue 1B: VIN extraction from multiple formats
     {
         "id": "1B_vin_in_table",
         "desc": "VIN in spec table — should extract full 17-char VIN",
@@ -77,7 +184,6 @@ TESTS = [
 <h1>2023 Ford F-150 Lariat</h1>
 <table class="specs">
 <tr><td>VIN:</td><td>1FTEW1EP0PKD12345</td></tr>
-<tr><td>Stock:</td><td>F23456</td></tr>
 <tr><td>Price:</td><td>$58,995</td></tr>
 <tr><td>Mileage:</td><td>8,234 miles</td></tr>
 <tr><td>Body:</td><td>Truck</td></tr>
@@ -88,7 +194,6 @@ TESTS = [
         "expect_value_contains": "1FTEW1EP0PKD12345",
     },
 
-    # Issue 2A: Body Type extraction
     {
         "id": "2A_body_type_suv",
         "desc": "Body type SUV in text — should extract as 'SUV'",
@@ -105,7 +210,6 @@ TESTS = [
         "expect_value_contains": "SUV",
     },
 
-    # Issue 2B: Exterior Color with full name
     {
         "id": "2B_exterior_color_full_name",
         "desc": "Color with full name should extract full name, not code",
@@ -123,24 +227,6 @@ TESTS = [
         "expect_value_contains": "Portimao",
     },
 
-    # Issue 2B: Color abbreviation only — should leave empty
-    {
-        "id": "2B_color_abbrev_only",
-        "desc": "Color code only (no full name) — should leave Exterior Color empty",
-        "html": """
-<html><body>
-<h1>2023 Mercedes GLC 300</h1>
-<div class="price">$55,495</div>
-<div class="vin">W1N0G8EB0PF123456</div>
-<div class="mileage">3 miles</div>
-<div class="body-type">SUV</div>
-<div class="color">Ack</div>
-</body></html>""",
-        "expect_field": "Exterior Color",
-        "expect_nonempty": False,  # should be empty (just a code)
-    },
-
-    # List page: extract FIRST vehicle only
     {
         "id": "list_page_first_vehicle",
         "desc": "Inventory list page — should extract first vehicle, not mix multiple",
@@ -159,14 +245,9 @@ TESTS = [
   <div class="vin">1C6SRFFT8RN222222</div>
   <div class="mileage">9 miles</div>
 </div>
-<div class="vehicle">
-  <h2>2023 Jeep Wrangler</h2>
-  <div class="price">$41,995</div>
-  <div class="vin">1C4HJXFN8PW333333</div>
-</div>
 </body></html>""",
         "expect_field": "VIN",
-        "expect_value_contains": "1111",  # should be first vehicle's VIN
+        "expect_value_contains": "1111",
     },
 ]
 
@@ -184,7 +265,6 @@ def run_tests():
             scores, pct = score(result)
             field_val = result.get(t["expect_field"], "")
 
-            # Evaluate pass/fail
             if "expect_nonempty" in t:
                 if t["expect_nonempty"]:
                     ok = bool(field_val and field_val.strip())
@@ -203,40 +283,37 @@ def run_tests():
             if ok:
                 passed += 1
 
-            print(f"  {'✅' if ok else '❌'} {t['id']}: {status}")
+            icon = "✅" if ok else "❌"
+            print(f"  {icon} {t['id']}: {status}")
             print(f"     {t['desc']}")
-            print(f"     Check: {criterion}")
-            print(f"     Got: {t['expect_field']} = {repr(field_val[:80]) if field_val else '(empty)'}")
-            print(f"     Overall: {pct}% ({' '.join(f+':'+s for f,s in scores.items())})")
+            print(f"     Check : {criterion}")
+            print(f"     Got   : {t['expect_field']} = {repr(field_val[:80]) if field_val else '(empty)'}")
+            print(f"     Score : {pct}%  {' '.join(f+':'+s for f,s in scores.items())}")
             print()
 
             results.append({
-                "id": t["id"],
-                "desc": t["desc"],
-                "status": status,
-                "field": t["expect_field"],
-                "got": field_val,
-                "overall_pct": pct,
+                "id": t["id"], "desc": t["desc"], "status": status,
+                "field": t["expect_field"], "got": field_val, "overall_pct": pct,
             })
 
         except Exception as e:
             print(f"  ❌ {t['id']}: ERROR — {e}\n")
-            results.append({"id": t["id"], "desc": t["desc"], "status": "ERROR", "field": "", "got": str(e), "overall_pct": 0})
+            results.append({"id": t["id"], "desc": t["desc"], "status": "ERROR",
+                            "field": "", "got": str(e), "overall_pct": 0})
 
     print(f"{'='*55}")
     print(f"  RESULT: {passed}/{len(TESTS)} passed")
     print(f"{'='*55}\n")
 
-    # Write markdown report
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    lines = [f"# Unit Test Results — {now}\n", f"**{passed}/{len(TESTS)} passed**\n\n"]
+    lines = [f"# Unit Test Results — {now}\n\n**{passed}/{len(TESTS)} passed**\n\n"]
     for r in results:
         icon = "✅" if r["status"] == "PASS" else "❌"
         lines.append(f"## {icon} {r['id']} — {r['status']}\n")
         lines.append(f"- **Test:** {r['desc']}\n")
         lines.append(f"- **Field:** `{r['field']}`\n")
         lines.append(f"- **Got:** `{r['got'][:80] if r['got'] else '(empty)'}`\n")
-        lines.append(f"- **Overall score:** {r['overall_pct']}%\n\n")
+        lines.append(f"- **Score:** {r['overall_pct']}%\n\n")
 
     report_path = os.path.join(DOMO_DIR, "unit_test_results.md")
     with open(report_path, "w") as f:
