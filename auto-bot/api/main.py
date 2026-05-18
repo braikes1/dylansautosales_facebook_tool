@@ -100,6 +100,53 @@ def extract_json_object(raw: str, label: str = "") -> dict:
     return json.loads(json_str)
 
 
+class ScrapeUrlPayload(BaseModel):
+    url: str
+
+
+@app.post("/fb/scrape_url")
+def scrape_url(body: ScrapeUrlPayload):
+    """
+    Fetch a dealer inventory URL server-side (using Render's IP / UA) and
+    run full field extraction.  Returns the same schema as /fb/extract_html.
+    Useful for automated testing from WSL where Cloudflare blocks local requests.
+    """
+    import requests as req_lib
+
+    UA_BROWSER = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+    headers = {
+        "User-Agent": UA_BROWSER,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+    try:
+        r = req_lib.get(body.url, headers=headers, timeout=25, verify=False)
+        r.raise_for_status()
+        html = r.text
+    except Exception as e:
+        return {"error": f"fetch_failed: {e}", "url": body.url}
+
+    # Reuse existing extract logic by building an HtmlPayload
+    soup = BeautifulSoup(html, "html.parser")
+    imgs = []
+    for img in soup.find_all("img"):
+        src = img.get("src") or img.get("data-src") or ""
+        if src:
+            imgs.append(ImageCandidate(src=src, alt=img.get("alt") or ""))
+        if len(imgs) >= 60:
+            break
+
+    payload = HtmlPayload(url=body.url, html=html, images=imgs)
+    return extract_html(payload)
+
+
 @app.post("/fb/extract_html")
 def extract_html(body: HtmlPayload):
     soup = BeautifulSoup(body.html, "html.parser")
