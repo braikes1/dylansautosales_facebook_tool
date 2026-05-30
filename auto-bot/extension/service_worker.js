@@ -296,9 +296,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "FETCH_DETAIL_VIA_API" && msg.detailUrl) {
     (async () => {
       try {
-        const ping = await fetch(API_HEALTH, { signal: AbortSignal.timeout(5000) });
+        const ping = await fetch(API_HEALTH, { signal: AbortSignal.timeout(30000) });
         if (!ping.ok) throw new Error("Server returned " + ping.status);
-        const data = await scrapeDetailTab(msg.detailUrl, false); // background tab for normal flow
+        const scrapeTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("scrape_timeout")), 45000)
+        );
+        const data = await Promise.race([scrapeDetailTab(msg.detailUrl, false), scrapeTimeout]);
         sendResponse({ ok: true, ...data });
       } catch (err) {
         const isHealthFail = err.message?.includes("Server returned") || err.name === "TimeoutError";

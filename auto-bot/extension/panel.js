@@ -283,12 +283,25 @@ function openDetailFor(vehicle) {
   state.detail = { base: vehicle, fields: {}, images: [], url: vehicle.detailUrl, html: "", loading: true };
   switchView("detail");
   renderDetail();
+  let responded = false;
+  const fallbackTimer = setTimeout(() => {
+    if (responded) return;
+    responded = true;
+    state.detail.loading = false;
+    state.detail.fields = { Description: "Request timed out. The server may be waking up — try again in 30 seconds." };
+    state.detail.images = [];
+    renderDetail();
+  }, 50000);
+
   chrome.runtime.sendMessage(
     { type: "FETCH_DETAIL_VIA_API", detailUrl: vehicle.detailUrl },
     (resp) => {
+      if (responded) return;
+      responded = true;
+      clearTimeout(fallbackTimer);
       if (!resp || !resp.ok) {
         state.detail.loading = false;
-        state.detail.fields = {};
+        state.detail.fields = { Description: resp?.error || "Could not reach server. Try again in 30 seconds." };
         state.detail.images = [];
         renderDetail();
         return;
