@@ -296,19 +296,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "FETCH_DETAIL_VIA_API" && msg.detailUrl) {
     (async () => {
       try {
+        // Wake server / confirm it's alive
         const ping = await fetch(API_HEALTH, { signal: AbortSignal.timeout(30000) });
         if (!ping.ok) throw new Error("Server returned " + ping.status);
-        const scrapeTimeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("scrape_timeout")), 45000)
+
+        // PRIMARY: backend server-side fetch (fast, no tab needed, works on 80% of dealers)
+        const serverResp = await fetch(`${API_BASE}/fb/scrape_url`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: msg.detailUrl }),
+          signal: AbortSignal.timeout(40000),
+        });
+
+        if (!serverResp.ok) throw new Error("scrape_url HTTP " + serverResp.status);
+        const serverData = await serverResp.json();
+
+        // If backend extracted a VIN, the page was fully parseable — use it directly
+        if (serverData.VIN || serverData.vin) {
+          const images = Array.isArray(serverData.images) ? serverData.images : [];
+          sendResponse({ ok: true, fields: serverData, images, html: "" });
+          return;
+        }
+
+        // FALLBACK: JS-heavy site, backend got no VIN — open tab to render JS
+        console.log("[sw] backend no VIN — falling back to tab scrape for:", msg.detailUrl);
+        const tabTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Tab scrape timed out after 45s")), 45000)
         );
-        const data = await Promise.race([scrapeDetailTab(msg.detailUrl, false), scrapeTimeout]);
-        sendResponse({ ok: true, ...data });
+        const tabData = await Promise.race([
+          scrapeDetailTab(msg.detailUrl, false),
+          tabTimeout,
+        ]);
+        sendResponse({ ok: true, ...tabData });
+
       } catch (err) {
-        const isHealthFail = err.message?.includes("Server returned") || err.name === "TimeoutError";
+        const isHealthFail =
+          err.message?.includes("Server returned") || err.name === "TimeoutError";
         sendResponse({
           ok: false,
           error: isHealthFail
-            ? "Cannot reach the AutoBot server. Make sure the AutoBot launcher is open and showing the green dot."
+            ? "Cannot reach the AutoBot server. Try again in 30 seconds."
             : err.message || String(err),
         });
       }
