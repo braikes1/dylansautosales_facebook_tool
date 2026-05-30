@@ -396,9 +396,65 @@ def scrape_url(body: ScrapeUrlPayload):
     return extract_html(payload)
 
 
+def detect_platform(html: str) -> str:
+    """Detect which dealer website platform is serving this page.
+    Check first 5KB only for performance."""
+    h = html[:5000].lower()
+    if 'class="ddc-' in h or 'ddc-content' in h or 'dealer.com' in h:
+        return "dealer_com"
+    if 'dealeron' in h or 'data-dealeron' in h:
+        return "dealeron"
+    if 'cobalt' in h or 'globalcdk' in h or 'cdk-' in h:
+        return "cdk"
+    if 'class="di-' in h or 'dealerinspire' in h or 'dealer-inspire' in h:
+        return "dealer_inspire"
+    return "generic"
+
+
+def vin_decode_nhtsa(vin: str) -> dict:
+    """Free VIN decode via NHTSA API. Returns dict of fields."""
+    import requests as req_lib
+    if not vin or len(vin) != 17:
+        return {}
+    try:
+        url = f"https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/{vin}?format=json"
+        r = req_lib.get(url, timeout=10)
+        results = r.json().get("Results", [])
+        decoded = {}
+        field_map = {
+            "Make": "Make",
+            "Model": "Model",
+            "Model Year": "Year",
+            "Body Class": "Body Type",
+            "Fuel Type - Primary": "Fuel Type",
+            "Transmission Style": "Transmission",
+        }
+        for item in results:
+            var = item.get("Variable", "")
+            val = item.get("Value", "")
+            if var in field_map and val and val.strip() and val.strip() != "Not Applicable":
+                decoded[field_map[var]] = val.strip()
+        # Normalize body type through existing function
+        if "Body Type" in decoded:
+            decoded["Body Type"] = _normalize_body_type(decoded["Body Type"])
+        if "Fuel Type" in decoded:
+            decoded["Fuel Type"] = _normalize_fuel(decoded["Fuel Type"])
+        if "Transmission" in decoded:
+            decoded["Transmission"] = _normalize_transmission(decoded["Transmission"])
+        if decoded:
+            print(f"[vin_decode] NHTSA returned: {list(decoded.keys())}", flush=True)
+        return decoded
+    except Exception as e:
+        print(f"[vin_decode] NHTSA error: {e}", flush=True)
+        return {}
+
+
 @app.post("/fb/extract_html")
 def extract_html(body: HtmlPayload):
     soup = BeautifulSoup(body.html, "html.parser")
+
+    platform = detect_platform(body.html)
+    print(f"[platform] detected: {platform} for {body.url}", flush=True)
 
     # ── LAYER 1: JSON-LD structured data ─────────────────────────────────────
     # Free, instant, 100% accurate when present (DealerOn, Dealer.com, CDK, Dealer Inspire).
@@ -406,7 +462,22 @@ def extract_html(body: HtmlPayload):
     jsonld = extract_jsonld(soup)
     result.update(jsonld)
 
-    # Determine which fields still need filling
+    # ── LAYER 1.5: NHTSA VIN decode (free, fills gaps from JSON-LD) ──────────
+    vin_for_decode = result.get("VIN", "")
+    if not vin_for_decode:
+        # Try regex to find VIN in raw text for decode even if JSON-LD missed it
+        m = re.search(r'\b([A-HJ-NPR-Z0-9]{17})\b', soup.get_text(separator=" "))
+        if m:
+            vin_for_decode = m.group(1)
+            result["VIN"] = vin_for_decode
+
+    if vin_for_decode:
+        nhtsa = vin_decode_nhtsa(vin_for_decode)
+        for k, v in nhtsa.items():
+            if v and not result.get(k):
+                result[k] = v
+
+    # Recalculate missing after VIN decode
     missing = [k for k in SCORED_FIELDS if not result.get(k)]
     all_missing = [k for k in FIELDS if not result.get(k)]
 
@@ -565,6 +636,7 @@ def extract_html(body: HtmlPayload):
             ]
 
     result["images"] = images_out
+    result["platform"] = platform
 
     return result
 
