@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
+from urllib.parse import urlparse
 import os
 import re
 import json
@@ -356,9 +357,19 @@ class ScrapeUrlPayload(BaseModel):
 @app.post("/fb/scrape_url")
 def scrape_url(body: ScrapeUrlPayload):
     """
-    Fetch a dealer inventory URL server-side (using Render's IP / UA) and
-    run full field extraction.  Returns the same schema as /fb/extract_html.
-    Useful for automated testing from WSL where Cloudflare blocks local requests.
+    Fetch a dealer inventory URL server-side and run full field extraction.
+    Returns the same schema as /fb/extract_html.
+
+    Strategy:
+      1. Try GET on the SRP URL.
+      2. If we get real HTML (200 + not a bot-challenge page), run extract_html.
+      3. If we get 403 / bot-challenge / zero JSON-LD, run platform API fallbacks:
+         - DDC (Dealer.com) inventory API
+         - Dealer Inspire WP-JSON
+         - DealerOn search API
+         - CDK inventory API
+         - Sitemap VDP harvest → JSON-LD
+         - Generic SRP VDP link → JSON-LD
     """
     import requests as req_lib
 
@@ -381,25 +392,486 @@ def scrape_url(body: ScrapeUrlPayload):
         url = "https://" + url[7:]
         print(f"[scrape_url] normalized to HTTPS: {url}", flush=True)
 
+    # ── Step 1: Try fetching the SRP page directly ──────────────────────────
+    html = ""
+    srp_ok = False
     try:
         r = req_lib.get(url, headers=headers, timeout=25, verify=False)
-        r.raise_for_status()
-        html = r.text
+        if r.status_code == 200:
+            # Check it's real dealer HTML, not a bot-challenge page
+            body_lower = r.text[:2000].lower()
+            is_challenge = (
+                "just a moment" in body_lower
+                or "cf-ray" in body_lower
+                or "access denied" in body_lower
+                or "enable javascript" in body_lower
+                or "browser check" in body_lower
+            )
+            if not is_challenge:
+                html = r.text
+                srp_ok = True
+                print(f"[scrape_url] SRP fetch OK ({len(html)} bytes): {url}", flush=True)
+            else:
+                print(f"[scrape_url] SRP returned bot-challenge page: {url}", flush=True)
+        else:
+            print(f"[scrape_url] SRP fetch HTTP {r.status_code}: {url}", flush=True)
     except Exception as e:
-        return {"error": f"fetch_failed: {e}", "url": url}
+        print(f"[scrape_url] SRP fetch exception: {e} — {url}", flush=True)
 
-    # Reuse existing extract logic by building an HtmlPayload
-    soup = BeautifulSoup(html, "html.parser")
-    imgs = []
-    for img in soup.find_all("img"):
-        src = img.get("src") or img.get("data-src") or ""
-        if src:
-            imgs.append(ImageCandidate(src=src, alt=img.get("alt") or ""))
-        if len(imgs) >= 60:
-            break
+    # ── Step 2: Detect platform (use HTML if we have it, else from URL/domain) ─
+    platform = _detect_platform_from_html(html, urlparse(url).netloc) if html else "generic"
+    print(f"[scrape_url] platform={platform} srp_ok={srp_ok} url={url}", flush=True)
 
-    payload = HtmlPayload(url=body.url, html=html, images=imgs)
-    return extract_html(payload)
+    # ── Step 3: If SRP gave us real HTML, try standard extraction first ──────
+    if srp_ok and html:
+        soup = BeautifulSoup(html, "html.parser")
+        jsonld_fields = extract_jsonld(soup)
+        if len([k for k in SCORED_FIELDS if jsonld_fields.get(k)]) >= 4:
+            # Good JSON-LD in the SRP — use the full extract_html pipeline
+            imgs = []
+            for img in soup.find_all("img"):
+                src = img.get("src") or img.get("data-src") or ""
+                if src:
+                    imgs.append(ImageCandidate(src=src, alt=img.get("alt") or ""))
+                if len(imgs) >= 60:
+                    break
+            payload = HtmlPayload(url=url, html=html, images=imgs)
+            return extract_html(payload)
+        print(f"[scrape_url] SRP JSON-LD weak ({len([k for k in SCORED_FIELDS if jsonld_fields.get(k)])}/10 fields) — trying platform API", flush=True)
+
+    # ── Step 4: Platform API / VDP fallback strategies ───────────────────────
+    api_fields = extract_from_platform_api(url, platform, html, req_lib)
+    filled_count = len([k for k in SCORED_FIELDS if api_fields.get(k)])
+    print(f"[scrape_url] platform API returned {filled_count}/10 fields", flush=True)
+
+    if filled_count >= 3:
+        # Enough to be useful — build a full result and fill remaining gaps
+        result: dict = {k: "" for k in FIELDS}
+        result.update(api_fields)
+
+        # NHTSA fill for gaps
+        vin_for_decode = result.get("VIN", "")
+        if vin_for_decode:
+            nhtsa = vin_decode_nhtsa(vin_for_decode)
+            for k, v in nhtsa.items():
+                if v and not result.get(k):
+                    result[k] = v
+
+        # Regex fallback for mileage & year
+        if not result.get("Mileage"):
+            result["Mileage"] = "0"
+        if not result.get("Year"):
+            m = re.search(r"\b(20(?:1[5-9]|2[0-9]))\b", str(api_fields))
+            if m:
+                result["Year"] = m.group(1)
+
+        # Synthesize description if missing
+        if not result.get("Description"):
+            parts = [p for p in [result.get("Year"), result.get("Make"), result.get("Model")] if p]
+            if parts:
+                result["Description"] = (
+                    f"{' '.join(parts)} available at this dealership. "
+                    "Contact us for current pricing and availability."
+                )
+
+        filled = [k for k in SCORED_FIELDS if result.get(k)]
+        print(f"[scrape_url] final coverage after API: {len(filled)}/10 — {filled}", flush=True)
+        result["images"] = []
+        result["platform"] = platform
+        return result
+
+    # ── Step 5: Last resort — if we have SRP HTML, run full extract_html ─────
+    if srp_ok and html:
+        soup = BeautifulSoup(html, "html.parser")
+        imgs = []
+        for img in soup.find_all("img"):
+            src = img.get("src") or img.get("data-src") or ""
+            if src:
+                imgs.append(ImageCandidate(src=src, alt=img.get("alt") or ""))
+            if len(imgs) >= 60:
+                break
+        payload = HtmlPayload(url=url, html=html, images=imgs)
+        return extract_html(payload)
+
+    # ── Step 6: Complete failure ─────────────────────────────────────────────
+    return {"error": f"fetch_failed: all strategies exhausted for {url}", "url": url}
+
+
+
+
+# =========================================================================
+# PLATFORM API EXTRACTION
+# Many dealer sites return 403 on page HTML but their internal XHR/JSON
+# inventory APIs are publicly accessible (no CSRF, just REST).
+# We detect the platform from the domain/URL and call the correct API.
+# =========================================================================
+
+def _make_session(req_lib):
+    """Return a requests.Session with a realistic browser UA and headers."""
+    s = req_lib.Session()
+    s.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/html, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+    })
+    return s
+
+
+def _fields_from_dealer_api_vehicle(v: dict) -> dict:
+    """
+    Map a generic dealer API vehicle record to our FIELDS dict.
+    Works for DDC (Dealer.com), DealerOn, CDK, and similar CMS JSON shapes.
+    """
+    result = {}
+
+    def _first(*keys):
+        for k in keys:
+            val = v.get(k)
+            if val is not None and str(val).strip():
+                return str(val).strip()
+        return ""
+
+    year = _first("year", "modelYear", "Year")
+    if year and year.isdigit() and len(year) == 4:
+        result["Year"] = year
+
+    make = _first("make", "Make", "brand")
+    if make:
+        result["Make"] = make
+
+    model = _first("model", "Model", "modelName")
+    if model:
+        result["Model"] = model
+
+    vin = _first("vin", "VIN", "vehicleIdentificationNumber")
+    vin = vin.upper().strip() if vin else ""
+    if len(vin) == 17 and re.match(r"^[A-HJ-NPR-Z0-9]{17}$", vin):
+        result["VIN"] = vin
+
+    body = _first("bodyStyle", "bodyType", "body", "vehicleBodyType", "Body Type")
+    if body:
+        result["Body Type"] = _normalize_body_type(body)
+
+    ext_color = _first(
+        "exteriorColor", "extColor", "color", "exterior_color",
+        "ExteriorColor", "extColorDescription"
+    )
+    if ext_color:
+        nc = _normalize_color(ext_color)
+        if nc:
+            result["Exterior Color"] = nc
+
+    int_color = _first(
+        "interiorColor", "intColor", "interior_color",
+        "InteriorColor", "intColorDescription"
+    )
+    if int_color:
+        nc = _normalize_color(int_color)
+        if nc:
+            result["Interior Color"] = nc
+
+    mileage = _first("mileage", "miles", "odometer", "Mileage")
+    if mileage:
+        digits = re.sub(r"[^\d]", "", str(mileage))
+        if digits:
+            result["Mileage"] = digits
+
+    # Price — try common keys; for new cars try internet price over MSRP
+    for pk in ["internetPrice", "salePrice", "price", "Price", "msrp", "MSRP", "sellingPrice"]:
+        pval = v.get(pk)
+        if pval:
+            try:
+                num = float(str(pval).replace(",", "").replace("$", "").strip())
+                if num > 500:
+                    result["Price"] = f"${int(num):,}"
+                    break
+            except (ValueError, TypeError):
+                pass
+
+    desc = _first("description", "Description", "longDescription", "comments")
+    if desc and len(desc) > 20:
+        result["Description"] = desc.strip()[:2000]
+
+    fuel = _first("fuelType", "fuel", "Fuel Type")
+    if fuel:
+        result["Fuel Type"] = _normalize_fuel(fuel)
+
+    trans = _first("transmission", "Transmission")
+    if trans:
+        result["Transmission"] = _normalize_transmission(trans)
+
+    cond = _first("condition", "Condition", "stockType", "type")
+    if cond:
+        c = cond.lower()
+        if "new" in c:
+            result["Condition"] = "Excellent"
+        elif "used" in c or "pre" in c:
+            result["Condition"] = "Good"
+
+    return result
+
+
+def _detect_platform_from_html(html: str, domain: str) -> str:
+    """Detect platform from HTML content and domain. Extended from detect_platform()."""
+    h = html[:8000].lower()
+    # Dealer.com / DDC
+    if 'class="ddc-' in h or 'ddc-content' in h or 'dealer.com' in h or 'ddc.com' in h:
+        return "dealer_com"
+    # Dealer Inspire
+    if 'class="di-' in h or 'dealerinspire' in h or 'dealer-inspire' in h or 'cfassets.dealerinspire.com' in h:
+        return "dealer_inspire"
+    # DealerOn
+    if 'dealeron' in h or 'data-dealeron' in h or 'dealeroncdn' in h:
+        return "dealeron"
+    # CDK / Cobalt
+    if 'cobalt' in h or 'globalcdk' in h or 'cdk-' in h or 'dealerfire' in h:
+        return "cdk"
+    # DealerSocket / Solera
+    if 'dealersocket' in h or 'idmsa.dealersocket' in h or 'solera' in h:
+        return "dealersocket"
+    # EDealer / RouteOne
+    if 'edealer' in h or 'routeone' in h:
+        return "edealer"
+    # Dominion / Digital Air Strike
+    if 'dominion' in h or 'vas' in domain:
+        return "dominion"
+    return "generic"
+
+
+def _try_ddc_api(host: str, req_lib, session) -> list:
+    """
+    Dealer.com (DDC) exposes a server-side rendered inventory API.
+    GET https://<host>/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory
+    Returns JSON with an `inventory` array.
+    """
+    url = f"https://{host}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory"
+    params = {"start": 0, "pageSize": 1, "sortBy": "internetPrice asc"}
+    try:
+        r = session.get(url, params=params, timeout=15, verify=False)
+        if r.status_code == 200:
+            data = r.json()
+            vehicles = data.get("inventory", [])
+            print(f"[ddc_api] got {len(vehicles)} vehicles from {host}", flush=True)
+            return vehicles
+    except Exception as e:
+        print(f"[ddc_api] failed {host}: {e}", flush=True)
+    return []
+
+
+def _try_dealer_inspire_api(host: str, req_lib, session) -> list:
+    """
+    Dealer Inspire sites run on WordPress. They expose a REST/sitemap layer.
+    Strategy 1: WP-JSON vehicles endpoint.
+    Strategy 2: VDP sitemap → pick first VDP URL → fetch it for JSON-LD.
+    Returns a list of raw vehicle dicts (may be empty if neither works).
+    """
+    # Strategy 1: WP-JSON
+    for path in [
+        "/wp-json/dealer-inspire/v1/vehicles",
+        "/wp-json/di/v1/vehicles",
+    ]:
+        try:
+            r = session.get(f"https://{host}{path}", timeout=10, verify=False, params={"per_page": 1})
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list) and data:
+                    print(f"[di_api] WP-JSON vehicles from {host}: {len(data)}", flush=True)
+                    return data
+                elif isinstance(data, dict) and data.get("vehicles"):
+                    return data["vehicles"][:1]
+        except Exception:
+            pass
+
+    # Strategy 2: Sitemap VDP harvest
+    vehicles = _try_sitemap_vdp(host, session, max_vdps=1)
+    return vehicles
+
+
+def _try_dealeron_api(host: str, req_lib, session) -> list:
+    """
+    DealerOn sites expose a search/inventory API endpoint.
+    """
+    for path in [
+        "/api/Inventory/Search",
+        "/api/inventory/search",
+        "/Inventory/Search",
+    ]:
+        try:
+            r = session.post(
+                f"https://{host}{path}",
+                json={"pageSize": 1, "pageIndex": 0},
+                timeout=10, verify=False
+            )
+            if r.status_code == 200:
+                data = r.json()
+                vehicles = data.get("Vehicles") or data.get("vehicles") or data.get("results") or []
+                if vehicles:
+                    print(f"[dealeron_api] got {len(vehicles)} from {host}", flush=True)
+                    return vehicles[:1]
+        except Exception as e:
+            print(f"[dealeron_api] {path} failed: {e}", flush=True)
+    return []
+
+
+def _try_cdk_api(host: str, req_lib, session) -> list:
+    """
+    CDK/Cobalt sites typically expose a vehicle inventory endpoint.
+    """
+    for path in [
+        "/inventory/search-inventory",
+        "/api/inventory",
+        "/new-inventory/api",
+    ]:
+        try:
+            r = session.get(
+                f"https://{host}{path}",
+                params={"pageSize": 1},
+                timeout=10, verify=False
+            )
+            if r.status_code == 200:
+                data = r.json()
+                vehicles = (
+                    data.get("vehicles")
+                    or data.get("Vehicles")
+                    or data.get("inventory")
+                    or (data if isinstance(data, list) else [])
+                )
+                if vehicles:
+                    print(f"[cdk_api] got {len(vehicles)} from {host}", flush=True)
+                    return list(vehicles)[:1]
+        except Exception as e:
+            print(f"[cdk_api] {path} failed: {e}", flush=True)
+    return []
+
+
+def _try_sitemap_vdp(host: str, session, max_vdps: int = 1) -> list:
+    """
+    Fallback: grab the dealer's sitemap XML, find VDP URLs (contain /vin/ or /vehicle/),
+    fetch the first one and extract JSON-LD from it. Returns list of partial vehicle dicts.
+    """
+    sitemap_urls = [
+        f"https://{host}/sitemap.xml",
+        f"https://{host}/sitemap_index.xml",
+        f"https://{host}/inventory-sitemap.xml",
+    ]
+    vdp_urls = []
+    for sm_url in sitemap_urls:
+        try:
+            r = session.get(sm_url, timeout=10, verify=False)
+            if r.status_code == 200 and "<url>" in r.text:
+                # Find VDP-shaped URLs: contain /vin/ or have 17-char VIN in path
+                for m in re.finditer(r"<loc>(https?://[^<]+)</loc>", r.text):
+                    loc = m.group(1)
+                    if re.search(r"/vin/|/vehicle/|/VIN/|[A-HJ-NPR-Z0-9]{17}", loc):
+                        vdp_urls.append(loc)
+                if vdp_urls:
+                    print(f"[sitemap] found {len(vdp_urls)} VDP URLs in {sm_url}", flush=True)
+                    break
+        except Exception:
+            pass
+
+    results = []
+    for vdp_url in vdp_urls[:max_vdps]:
+        try:
+            r = session.get(vdp_url, timeout=20, verify=False)
+            if r.status_code == 200:
+                soup = BeautifulSoup(r.text, "html.parser")
+                fields = extract_jsonld(soup)
+                if fields:
+                    print(f"[sitemap_vdp] extracted {list(fields.keys())} from {vdp_url}", flush=True)
+                    results.append(fields)
+        except Exception as e:
+            print(f"[sitemap_vdp] {vdp_url} failed: {e}", flush=True)
+    return results
+
+
+def _try_generic_vdp(host: str, session) -> dict:
+    """
+    For truly generic sites (no known API): fetch the SRP, find the first
+    VDP link on the page (href with /vin/ or a 17-char VIN), then fetch
+    that VDP and extract JSON-LD. Returns a fields dict (may be empty).
+    """
+    srp_url = f"https://{host}/new-inventory/index.htm"
+    try:
+        r = session.get(srp_url, timeout=20, verify=False)
+        if r.status_code != 200:
+            return {}
+        soup = BeautifulSoup(r.text, "html.parser")
+        # Find first <a href> that looks like a VDP
+        vdp_href = None
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if re.search(r"/vin/|/vehicle/|[A-HJ-NPR-Z0-9]{17}", href, re.IGNORECASE):
+                vdp_href = href if href.startswith("http") else f"https://{host}{href}"
+                break
+        if not vdp_href:
+            return {}
+        vdp_r = session.get(vdp_href, timeout=20, verify=False)
+        if vdp_r.status_code != 200:
+            return {}
+        vdp_soup = BeautifulSoup(vdp_r.text, "html.parser")
+        fields = extract_jsonld(vdp_soup)
+        if fields:
+            print(f"[generic_vdp] VDP JSON-LD from {vdp_href}: {list(fields.keys())}", flush=True)
+        return fields
+    except Exception as e:
+        print(f"[generic_vdp] {host}: {e}", flush=True)
+        return {}
+
+
+def extract_from_platform_api(url: str, platform: str, html: str, req_lib) -> dict:
+    """
+    Try platform-specific API calls to get structured vehicle data.
+    Falls back to sitemap VDP strategy if the API returns nothing.
+    Returns a partial fields dict (may be empty if all strategies fail).
+    """
+    parsed = urlparse(url)
+    host = parsed.netloc.lstrip("www.")
+    full_host = parsed.netloc  # with www.
+
+    session = _make_session(req_lib)
+
+    vehicles = []
+
+    if platform == "dealer_com":
+        vehicles = _try_ddc_api(full_host, req_lib, session)
+        if not vehicles:
+            vehicles = _try_ddc_api(host, req_lib, session)
+
+    elif platform == "dealer_inspire":
+        vehicles = _try_dealer_inspire_api(full_host, req_lib, session)
+
+    elif platform == "dealeron":
+        vehicles = _try_dealeron_api(full_host, req_lib, session)
+
+    elif platform == "cdk":
+        vehicles = _try_cdk_api(full_host, req_lib, session)
+
+    # If API returned vehicles, map first one to our field schema
+    if vehicles:
+        v = vehicles[0]
+        # Vehicles from sitemap strategy are already field dicts
+        if isinstance(v, dict) and any(k in v for k in ("Year", "Make", "VIN")):
+            return v
+        return _fields_from_dealer_api_vehicle(v)
+
+    # Universal fallback: sitemap VDP → JSON-LD
+    sitemap_results = _try_sitemap_vdp(full_host, session, max_vdps=1)
+    if sitemap_results and isinstance(sitemap_results[0], dict):
+        first = sitemap_results[0]
+        # Sitemap results may already be field dicts from extract_jsonld
+        if any(k in first for k in ("Year", "Make", "VIN")):
+            return first
+        return _fields_from_dealer_api_vehicle(first)
+
+    # Last resort: scrape VDP link from SRP page
+    generic = _try_generic_vdp(full_host, session)
+    return generic
 
 
 def detect_platform(html: str) -> str:
