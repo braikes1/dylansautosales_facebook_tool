@@ -147,13 +147,13 @@ def run():
         report_path = REPORT_PATH  # fallback to /tmp on Render
 
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    print(f"[harness] Starting test run — {len(DEALER_URLS)} dealers — {ts}")
+    print(f"[harness] Starting test run -- {len(DEALER_URLS)} dealers -- {ts}")
     print(f"[harness] API: {API_BASE}")
     print(f"[harness] Report will be saved to: {report_path}")
 
     rows = []
     for i, url in enumerate(DEALER_URLS):
-        print(f"[harness] {i+1}/{len(DEALER_URLS)} — {url}")
+        print(f"[harness] {i+1}/{len(DEALER_URLS)} -- {url}")
 
         status, score_pct, field_scores, error = call_scrape_url(url)
 
@@ -167,9 +167,10 @@ def run():
         rows.append(row)
 
         if status == "OK":
-            print(f"[harness]   Score: {score_pct}% — {field_scores}")
+            ascii_scores = {k: ("OK" if v == "✓" else "--") for k, v in field_scores.items()}
+            print(f"[harness]   Score: {score_pct}% -- {ascii_scores}")
         else:
-            print(f"[harness]   FAILED — {error}")
+            print(f"[harness]   FAILED -- {error}")
 
         time.sleep(DELAY_BETWEEN)
 
