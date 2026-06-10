@@ -375,12 +375,18 @@ def scrape_url(body: ScrapeUrlPayload):
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
+    url = body.url
+    # Enforce HTTPS — some dealer URLs come in as HTTP and fail silently
+    if url.startswith("http://"):
+        url = "https://" + url[7:]
+        print(f"[scrape_url] normalized to HTTPS: {url}", flush=True)
+
     try:
-        r = req_lib.get(body.url, headers=headers, timeout=25, verify=False)
+        r = req_lib.get(url, headers=headers, timeout=25, verify=False)
         r.raise_for_status()
         html = r.text
     except Exception as e:
-        return {"error": f"fetch_failed: {e}", "url": body.url}
+        return {"error": f"fetch_failed: {e}", "url": url}
 
     # Reuse existing extract logic by building an HtmlPayload
     soup = BeautifulSoup(html, "html.parser")

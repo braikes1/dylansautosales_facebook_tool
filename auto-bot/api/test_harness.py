@@ -1,8 +1,12 @@
 """
 AutoBot Test Harness
 ====================
-Scrapes real dealer inventory pages and scores field extraction quality.
-Runs as a Render cron job. Outputs results to a CSV report.
+Calls the backend /fb/scrape_url endpoint for each dealer and scores
+field extraction quality. Runs as a Render cron job nightly.
+Outputs results to a CSV report.
+
+NOTE: This harness uses backend scraping (not tab scraping) to avoid
+Chrome throttling / "Frame with ID 0 is showing error page" false failures.
 """
 
 import csv
@@ -10,149 +14,75 @@ import os
 import time
 import requests
 from datetime import datetime
-from bs4 import BeautifulSoup
 
 API_BASE = os.environ.get("API_BASE", "https://dylansautosales-facebook-tool.onrender.com")
-REPORT_PATH = "/tmp/autobot_test_report.csv"
-REQUEST_TIMEOUT = 30
-DELAY_BETWEEN = 5  # seconds between requests — avoid rate limiting
+REPORT_PATH = os.environ.get("REPORT_PATH", "/tmp/autobot_test_report.csv")
+REQUEST_TIMEOUT = 45   # seconds per dealer (per task brief)
+DELAY_BETWEEN = 2      # seconds between dealer requests (per task brief)
 
-UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
-
-# ── Verified US Dealer Inventory Pages ───────────────────────────────
-# All URLs manually verified to exist. Covers major dealer groups
-# and platforms: Hendrick (hendrickcars.com), AutoNation (autonation.com),
-# CDK Global, DealerSocket, VinSolutions, DealerInspire, Dealer.com
+# ── Florida-Focused 35 Dealer List (South Florida + Florida franchise) ────────
+# Replaces the old 58-dealer list that included out-of-state dealers.
+# All URLs use HTTPS. Highest-priority (FLORIDA CORE) dealers first.
 DEALER_URLS = [
+    # ── CORAL SPRINGS AREA ──────────────────────────────────────────
+    "https://www.coralspringsautomall.com/new-inventory/index.htm",
 
-    # ── HENDRICK AUTOMOTIVE GROUP (hendrickcars.com) ──────────────────
-    "https://www.hendrickcars.com/new-inventory/index.htm",
-    "https://www.hendrickcars.com/used-inventory/index.htm",
+    # ── RICK CASE AUTOMOTIVE GROUP ───────────────────────────────────
+    "https://www.rickcasehonda.com/new-inventory/index.htm",
+    "https://www.rickcaseacura.com/new-inventory/index.htm",
+    "https://www.rickcasemazda.com/new-inventory/index.htm",
+    "https://www.rickcasehyundai.com/new-inventory/index.htm",
+    "https://www.rickcasevw.com/new-inventory/index.htm",
+    "https://www.rickcasealfaromeo.com/new-inventory/index.htm",
+    "https://www.rickcasemitsubishi.com/new-inventory/index.htm",
 
-    # ── AUTONATION (autonation.com) ───────────────────────────────────
-    "https://www.autonation.com/new-cars",
-    "https://www.autonation.com/used-cars",
+    # ── BROWARD / PALM BEACH ─────────────────────────────────────────
+    "https://www.toyotaofcoconutcreek.com/new-inventory/index.htm",
+    "https://www.bramanbmw.com/new-inventory/index.htm",
+    "https://www.bramanmiamibmw.com/new-inventory/index.htm",
+    "https://www.bramanmercedes.com/new-inventory/index.htm",
+    "https://www.bramanporsche.com/new-inventory/index.htm",
+    "https://www.bramanbentley.com/new-inventory/index.htm",
+    "https://www.bramanhondapalmbeach.com/new-inventory/index.htm",
 
-    # ── MERCEDES-BENZ ─────────────────────────────────────────────────
-    "https://www.mboftampa.com/new-inventory/index.htm",
-    "https://www.mbofmiami.com/new-inventory/index.htm",
-    "https://www.mercedesbenzofsanantoniotx.com/new-inventory/index.htm",
-    "https://www.mbofbeverlyhills.com/new-inventory/index.htm",
+    # ── PHIL SMITH AUTOMOTIVE GROUP ──────────────────────────────────
+    "https://www.philsmithkia.com/new-inventory/index.htm",
+    "https://www.philsmithford.com/new-inventory/index.htm",
+    "https://www.philsmithtoyota.com/new-inventory/index.htm",
+    "https://www.philsmithnissan.com/new-inventory/index.htm",
 
-    # ── BMW ───────────────────────────────────────────────────────────
-    "https://www.bmwofnaples.com/new-inventory/index.htm",
-    "https://www.centralflbmw.com/new-inventory/index.htm",
-    "https://www.bmwofhouston.com/new-inventory/index.htm",
-    "https://www.bmwofsandiego.com/new-inventory/index.htm",
-
-    # ── HONDA ─────────────────────────────────────────────────────────
+    # ── OTHER SOUTH FLORIDA ──────────────────────────────────────────
+    "https://www.holmanhonda.com/new-inventory/index.htm",
     "https://www.keatinghonda.com/new-inventory/index.htm",
-    "https://www.hendrickhonda.com/new-inventory/index.htm",
-    "https://www.powerhonda.com/new-inventory/index.htm",
 
-    # ── TOYOTA ───────────────────────────────────────────────────────
-    "https://www.toyotaoforlando.com/new-inventory/index.htm",
-    "https://www.sewell.com/toyota/new-inventory/index.htm",
-    "https://www.toyotaofcoolsprings.com/new-inventory/index.htm",
+    # ── TAMPA / CENTRAL FLORIDA ──────────────────────────────────────
+    "https://www.mboftampa.com/new-inventory/index.htm",
 
-    # ── FORD ──────────────────────────────────────────────────────────
-    "https://www.vatlandford.com/new-inventory/index.htm",
-    "https://www.russellfordlincoln.com/new-inventory/index.htm",
-    "https://www.fordofkissimmee.com/new-inventory/index.htm",
-
-    # ── CHEVROLET ─────────────────────────────────────────────────────
-    "https://www.peacockchevrolet.com/new-inventory/index.htm",
-    "https://www.simmonsrichmanchevrolet.com/new-inventory/index.htm",
-    "https://www.classicchevrolet.com/new-inventory/index.htm",
-
-    # ── NISSAN ───────────────────────────────────────────────────────
-    "https://www.tavernanissan.com/new-inventory/index.htm",
-    "https://www.sunshinestaternissan.com/new-inventory/index.htm",
-    "https://www.nissanofchattanooga.com/new-inventory/index.htm",
-
-    # ── JEEP / CHRYSLER / DODGE / RAM ────────────────────────────────
-    "https://www.tavernacdjrf.com/new-inventory/index.htm",
-    "https://www.logantonmotors.com/new-inventory/index.htm",
-    "https://www.hendersondodge.com/new-inventory/index.htm",
-
-    # ── CADILLAC ──────────────────────────────────────────────────────
-    "https://www.sewellcadillac.com/new-inventory/index.htm",
-    "https://www.classicchevroletbuickgmccadillac.com/new-inventory/index.htm",
-
-    # ── AUDI ──────────────────────────────────────────────────────────
-    "https://www.audibroward.com/new-inventory/index.htm",
+    # ── NAPLES / SOUTHWEST FLORIDA ───────────────────────────────────
     "https://www.audinaples.com/new-inventory/index.htm",
-    "https://www.audiatlanta.com/new-inventory/index.htm",
-
-    # ── LEXUS ─────────────────────────────────────────────────────────
-    "https://www.sewelllexus.com/new-inventory/index.htm",
-    "https://www.lexusoforlando.com/new-inventory/index.htm",
-    "https://www.lexusofnashville.com/new-inventory/index.htm",
-
-    # ── ACURA ─────────────────────────────────────────────────────────
-    "https://www.acuraofbeverlyhills.com/new-inventory/index.htm",
-    "https://www.acuraoforlando.com/new-inventory/index.htm",
-
-    # ── HYUNDAI ───────────────────────────────────────────────────────
-    "https://www.hendrickhyundaiofconcord.com/new-inventory/index.htm",
-    "https://www.hyundaioforlando.com/new-inventory/index.htm",
-
-    # ── KIA ───────────────────────────────────────────────────────────
-    "https://www.kiaoforlando.com/new-inventory/index.htm",
-    "https://www.classickia.com/new-inventory/index.htm",
-
-    # ── SUBARU ───────────────────────────────────────────────────────
-    "https://www.subaruofwakefield.com/new-inventory/index.htm",
-    "https://www.larrymillersubaru.com/new-inventory/index.htm",
-
-    # ── VOLKSWAGEN ───────────────────────────────────────────────────
-    "https://www.vwoforlando.com/new-inventory/index.htm",
-    "https://www.volkswagenofsouthcharlotte.com/new-inventory/index.htm",
-
-    # ── VOLVO ────────────────────────────────────────────────────────
-    "https://www.volvocarsnaples.com/new-inventory/index.htm",
-    "https://www.volvocarsatlanta.com/new-inventory/index.htm",
-
-    # ── MAZDA ────────────────────────────────────────────────────────
     "https://www.mazdaofnaples.com/new-inventory/index.htm",
-    "https://www.mazdaoforlando.com/new-inventory/index.htm",
-
-    # ── PORSCHE ──────────────────────────────────────────────────────
     "https://www.porscheofnaples.com/new-inventory/index.htm",
-    "https://www.porscheatlanta.com/new-inventory/index.htm",
-
-    # ── LAND ROVER / JAGUAR ──────────────────────────────────────────
-    "https://www.landroveratl.com/new-inventory/index.htm",
-    "https://www.jaguarlandrovertampa.com/new-inventory/index.htm",
-
-    # ── INFINITI ─────────────────────────────────────────────────────
     "https://www.infinitiofnaples.com/new-inventory/index.htm",
-    "https://www.infinitioftampa.com/new-inventory/index.htm",
 
-    # ── BUICK / GMC ──────────────────────────────────────────────────
-    "https://www.classicbuickgmc.com/new-inventory/index.htm",
-    "https://www.searcybuickgmc.com/new-inventory/index.htm",
+    # ── BROWARD ──────────────────────────────────────────────────────
+    "https://www.audibroward.com/new-inventory/index.htm",
 
-    # ── LINCOLN ──────────────────────────────────────────────────────
-    "https://www.russellfords.com/lincoln/new-inventory/index.htm",
-    "https://www.lincolnoforlando.com/new-inventory/index.htm",
-
-    # ── GENESIS ──────────────────────────────────────────────────────
+    # ── ORLANDO AREA ─────────────────────────────────────────────────
+    "https://www.lexusoforlando.com/new-inventory/index.htm",
+    "https://www.toyotaoforlando.com/new-inventory/index.htm",
+    "https://www.kiaoforlando.com/new-inventory/index.htm",
+    "https://www.hyundaioforlando.com/new-inventory/index.htm",
+    "https://www.vwoforlando.com/new-inventory/index.htm",
     "https://www.genesisoforlando.com/new-inventory/index.htm",
 
-    # ── MITSUBISHI ───────────────────────────────────────────────────
-    "https://www.mitsubishioforlando.com/new-inventory/index.htm",
+    # ── CHRYSLER / DODGE / JEEP / RAM ────────────────────────────────
+    "https://www.tavernachryslerdodgejeepramfiat.com/new-inventory/index.htm",
 
-    # ── ALFA ROMEO ───────────────────────────────────────────────────
-    "https://www.alfaromeoofnaples.com/new-inventory/index.htm",
-
-    # ── MASERATI ─────────────────────────────────────────────────────
-    "https://www.maseratiofnaples.com/new-inventory/index.htm",
+    # ── HENDRICK ─────────────────────────────────────────────────────
+    "https://www.hendrickhonda.com/new-inventory/index.htm",
 ]
+
+assert len(DEALER_URLS) == 35, f"Expected 35 dealer URLs, got {len(DEALER_URLS)}"
 
 SCORED_FIELDS = [
     "Year", "Make", "Model", "Price",
@@ -161,140 +91,114 @@ SCORED_FIELDS = [
 ]
 
 
-def fetch_html(url: str) -> str | None:
-    try:
-        r = requests.get(
-            url,
-            headers={"User-Agent": UA},
-            timeout=REQUEST_TIMEOUT,
-            verify=False,  # skip SSL cert mismatches
-        )
-        r.raise_for_status()
-        return r.text
-    except Exception as e:
-        print(f"[fetch] FAILED {url}: {e}")
-        return None
+def call_scrape_url(url: str) -> tuple[str, int, dict, str]:
+    """
+    POST to /fb/scrape_url and return (status, score_pct, field_scores, error).
 
-
-def fetch_images(html: str) -> list:
-    soup = BeautifulSoup(html, "html.parser")
-    imgs = []
-    for img in soup.find_all("img"):
-        src = img.get("src") or img.get("data-src") or ""
-        if src:
-            imgs.append({
-                "src": src,
-                "alt": img.get("alt") or "",
-                "width": 0,
-                "height": 0,
-            })
-        if len(imgs) >= 60:
-            break
-    return imgs
-
-
-def call_api(url: str, html: str, images: list) -> dict | None:
+    status   : "OK" | "FAILED"
+    score_pct: 0-100
+    field_scores: dict of field -> "✓" or "✗"
+    error    : "" on success, error description on failure
+    """
     try:
         resp = requests.post(
-            f"{API_BASE}/fb/extract_html",
-            json={"url": url, "html": html, "images": images},
+            f"{API_BASE}/fb/scrape_url",
+            json={"url": url},
             timeout=REQUEST_TIMEOUT,
         )
-        resp.raise_for_status()
-        return resp.json()
+    except requests.exceptions.Timeout:
+        return "FAILED", 0, {f: "✗" for f in SCORED_FIELDS}, "timeout"
     except Exception as e:
-        print(f"[api] FAILED {url}: {e}")
-        return None
+        return "FAILED", 0, {f: "✗" for f in SCORED_FIELDS}, str(e)
 
+    if resp.status_code != 200:
+        return "FAILED", 0, {f: "✗" for f in SCORED_FIELDS}, f"HTTP {resp.status_code}"
 
-def score_result(result: dict) -> dict:
-    scores = {}
+    try:
+        data = resp.json()
+    except Exception:
+        return "OK", 0, {f: "✗" for f in SCORED_FIELDS}, "empty_response"
+
+    if not data:
+        return "OK", 0, {f: "✗" for f in SCORED_FIELDS}, "empty_response"
+
+    # Score the fields
+    field_scores = {}
     total = 0
     for field in SCORED_FIELDS:
-        val = result.get(field, "")
+        val = data.get(field, "")
         populated = bool(val and str(val).strip())
-        scores[field] = "✓" if populated else "✗"
+        field_scores[field] = "✓" if populated else "✗"
         if populated:
             total += 1
+
     score_pct = round((total / len(SCORED_FIELDS)) * 100)
-    return {"scores": scores, "total": total, "pct": score_pct}
+    return "OK", score_pct, field_scores, ""
 
 
 def run():
-    # suppress SSL warnings since we use verify=False
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    # Local report path: if running locally (Windows/WSL), save to Desktop DOMO folder
+    local_path = r"C:\Users\NOBRAIKES\Desktop\DOMO"
+    if os.path.isdir("/mnt/c/Users/NOBRAIKES/Desktop/DOMO"):
+        report_path = "/mnt/c/Users/NOBRAIKES/Desktop/DOMO/autobot_test_report.csv"
+    elif os.path.isdir(local_path):
+        report_path = os.path.join(local_path, "autobot_test_report.csv")
+    else:
+        report_path = REPORT_PATH  # fallback to /tmp on Render
 
-    print(f"[harness] Starting test run — {len(DEALER_URLS)} dealers")
+    ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    print(f"[harness] Starting test run — {len(DEALER_URLS)} dealers — {ts}")
     print(f"[harness] API: {API_BASE}")
+    print(f"[harness] Report will be saved to: {report_path}")
 
     rows = []
     for i, url in enumerate(DEALER_URLS):
         print(f"[harness] {i+1}/{len(DEALER_URLS)} — {url}")
 
-        html = fetch_html(url)
-        if not html:
-            rows.append({
-                "url": url,
-                "status": "FETCH_FAILED",
-                "score_pct": 0,
-                **{f: "✗" for f in SCORED_FIELDS},
-                "raw_title": "", "raw_price": "", "raw_vin": "",
-            })
-            time.sleep(DELAY_BETWEEN)
-            continue
+        status, score_pct, field_scores, error = call_scrape_url(url)
 
-        images = fetch_images(html)
-        result = call_api(url, html, images)
-
-        if not result:
-            rows.append({
-                "url": url,
-                "status": "API_FAILED",
-                "score_pct": 0,
-                **{f: "✗" for f in SCORED_FIELDS},
-                "raw_title": "", "raw_price": "", "raw_vin": "",
-            })
-            time.sleep(DELAY_BETWEEN)
-            continue
-
-        scored = score_result(result)
         row = {
             "url": url,
-            "status": "OK",
-            "score_pct": scored["pct"],
+            "status": status,
+            "score_pct": score_pct,
+            **field_scores,
+            "error": error,
         }
-        for field in SCORED_FIELDS:
-            row[field] = scored["scores"][field]
-
-        row["raw_title"] = result.get("Title", "")
-        row["raw_price"] = result.get("Price", "")
-        row["raw_vin"]   = result.get("VIN", "")
-
         rows.append(row)
-        print(f"[harness] Score: {scored['pct']}% — {scored['scores']}")
+
+        if status == "OK":
+            print(f"[harness]   Score: {score_pct}% — {field_scores}")
+        else:
+            print(f"[harness]   FAILED — {error}")
+
         time.sleep(DELAY_BETWEEN)
 
-    # Write CSV
-    fieldnames = ["url", "status", "score_pct"] + SCORED_FIELDS + ["raw_title", "raw_price", "raw_vin"]
-    with open(REPORT_PATH, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+    # Write CSV (same core columns as before for backward compatibility)
+    fieldnames = ["url", "status", "score_pct"] + SCORED_FIELDS + ["error"]
+    with open(report_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
-    ok_rows    = [r for r in rows if r["status"] == "OK"]
-    avg_score  = round(sum(r["score_pct"] for r in ok_rows) / len(ok_rows)) if ok_rows else 0
-    failed     = len([r for r in rows if r["status"] != "OK"])
-    passed_100 = len([r for r in ok_rows if r["score_pct"] == 100])
+    # Summary stats
+    ok_rows     = [r for r in rows if r["status"] == "OK"]
+    failed_rows = [r for r in rows if r["status"] != "OK"]
+    avg_score   = round(sum(r["score_pct"] for r in ok_rows) / len(ok_rows)) if ok_rows else 0
+    above_80    = [r for r in ok_rows if r["score_pct"] >= 80]
+    below_50    = [r for r in ok_rows if r["score_pct"] < 50]
+    perfect     = [r for r in ok_rows if r["score_pct"] == 100]
 
-    print("\n" + "="*50)
+    print("\n" + "=" * 60)
     print(f"[harness] COMPLETE — {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
-    print(f"[harness] Total dealers tested : {len(DEALER_URLS)}")
-    print(f"[harness] Fetch/API failures   : {failed}")
-    print(f"[harness] Average score        : {avg_score}%")
-    print(f"[harness] Perfect scores (100%): {passed_100}")
-    print(f"[harness] Report saved to      : {REPORT_PATH}")
-    print("="*50)
+    print(f"[harness] Total dealers tested     : {len(DEALER_URLS)}")
+    print(f"[harness] OK (HTTP 200)             : {len(ok_rows)}")
+    print(f"[harness] FAILED                   : {len(failed_rows)}")
+    print(f"[harness] Average score (OK only)  : {avg_score}%")
+    print(f"[harness] Above 80%                : {len(above_80)}")
+    print(f"[harness] Below 50%                : {len(below_50)}")
+    print(f"[harness] Perfect (100%)           : {len(perfect)}")
+    print(f"[harness] Report saved to          : {report_path}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
