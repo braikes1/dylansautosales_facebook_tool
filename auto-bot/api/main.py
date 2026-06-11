@@ -715,9 +715,8 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
             if new_vehicles:
                 print(f"[ddc_api] ALL widget filtered to {len(new_vehicles)} new from {len(tracking)} total at {host}", flush=True)
                 return new_vehicles[:1]
-            if tracking:
-                print(f"[ddc_api] ALL widget — no new vehicles found at {host}, returning first", flush=True)
-                return tracking[:1]
+            # No new vehicles in ALL widget — return empty so sitemap VDP can try
+            print(f"[ddc_api] ALL widget — zero new vehicles in {len(tracking)} results at {host}, skipping", flush=True)
             inv = data.get("inventory", [])
             if inv:
                 return inv[:1]
