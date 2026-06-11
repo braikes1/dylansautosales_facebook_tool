@@ -794,10 +794,24 @@ def _try_sitemap_vdp(host: str, session, max_vdps: int = 1) -> list:
             r = session.get(sm_url, timeout=10, verify=False)
             if r.status_code == 200 and "<url>" in r.text:
                 # Find VDP-shaped URLs: contain /vin/ or have 17-char VIN in path
+                # OR match DDC hash-style: /new/<Make>/YYYY-...-<32hexchars>.htm
+                # OR match other platforms: /vehicle/, /inventory/, /new/<make>/
+                vdp_pattern = re.compile(
+                    r"/vin/|/vehicle/|/VIN/"
+                    r"|[A-HJ-NPR-Z0-9]{17}"   # 17-char VIN in URL
+                    r"|/new/[A-Za-z]"           # DDC new inventory: /new/Chrysler/...
+                    r"|/used/[A-Za-z]"          # DDC used: /used/Chevrolet/...
+                )
                 for m in re.finditer(r"<loc>(https?://[^<]+)</loc>", r.text):
                     loc = m.group(1)
-                    if re.search(r"/vin/|/vehicle/|/VIN/|[A-HJ-NPR-Z0-9]{17}", loc):
-                        vdp_urls.append(loc)
+                    if vdp_pattern.search(loc):
+                        # Skip pure SRP/category pages (no year+model in path = not a VDP)
+                        # DDC VDPs end with a 32-char hex hash .htm
+                        is_ddc_vdp = re.search(r"-[0-9a-f]{32}\.htm$", loc)
+                        is_vin_vdp = re.search(r"[A-HJ-NPR-Z0-9]{17}", loc)
+                        is_generic_vdp = re.search(r"/vin/|/vehicle/", loc, re.IGNORECASE)
+                        if is_ddc_vdp or is_vin_vdp or is_generic_vdp:
+                            vdp_urls.append(loc)
                 if vdp_urls:
                     print(f"[sitemap] found {len(vdp_urls)} VDP URLs in {sm_url}", flush=True)
                     break
@@ -897,6 +911,18 @@ def extract_from_platform_api(url: str, platform: str, html: str, req_lib) -> di
         if any(k in first for k in ("Year", "Make", "VIN")):
             return first
         return _fields_from_dealer_api_vehicle(first)
+
+    # If platform was not confirmed as DDC, try the DDC API anyway as a blind probe
+    # (many large dealer sites run DDC but we couldn't detect it from blocked SRP HTML)
+    if platform != "dealer_com":
+        blind_ddc = _try_ddc_api(full_host, req_lib, session)
+        if not blind_ddc:
+            blind_ddc = _try_ddc_api(host, req_lib, session)
+        if blind_ddc:
+            v = blind_ddc[0]
+            if isinstance(v, dict) and any(k in v for k in ("Year", "Make", "VIN")):
+                return v
+            return _fields_from_dealer_api_vehicle(v)
 
     # Last resort: scrape VDP link from SRP page
     generic = _try_generic_vdp(full_host, session)
