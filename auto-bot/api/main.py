@@ -481,17 +481,31 @@ def scrape_url(body: ScrapeUrlPayload):
         return result
 
     # ── Step 5: Last resort — if we have SRP HTML, run full extract_html ─────
+    # Only for VDP-style URLs. Skip for known SRP patterns (/new-inventory/index.htm,
+    # /new-vehicles/, /inventory/new) since AI-extracting an SRP produces junk data.
     if srp_ok and html:
-        soup = BeautifulSoup(html, "html.parser")
-        imgs = []
-        for img in soup.find_all("img"):
-            src = img.get("src") or img.get("data-src") or ""
-            if src:
-                imgs.append(ImageCandidate(src=src, alt=img.get("alt") or ""))
-            if len(imgs) >= 60:
-                break
-        payload = HtmlPayload(url=url, html=html, images=imgs)
-        return extract_html(payload)
+        url_lower = url.lower()
+        is_srp = any(pat in url_lower for pat in [
+            "/new-inventory/index.htm",
+            "/used-inventory/index.htm",
+            "/new-vehicles/",
+            "/inventory/new",
+            "/inventory/used",
+            "/search/new-",
+        ])
+        if not is_srp:
+            soup = BeautifulSoup(html, "html.parser")
+            imgs = []
+            for img in soup.find_all("img"):
+                src = img.get("src") or img.get("data-src") or ""
+                if src:
+                    imgs.append(ImageCandidate(src=src, alt=img.get("alt") or ""))
+                if len(imgs) >= 60:
+                    break
+            payload = HtmlPayload(url=url, html=html, images=imgs)
+            return extract_html(payload)
+        else:
+            print(f"[scrape_url] SRP URL — skipping extract_html fallback to avoid noisy data: {url}", flush=True)
 
     # ── Step 6: Complete failure — return graceful unsupported flag ──────────
     # Instead of a raw error, report that this page cannot be scraped server-side.
