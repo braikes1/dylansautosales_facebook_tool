@@ -698,20 +698,29 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
     params_all = {"start": 0, "pageSize": 50, "sortBy": "internetPrice asc"}
 
     # Strategy 1: NEW-exclusive widget (returns only new inventory)
+    # Retry once on transient network failures (Render datacenter can be flaky).
     for widget in [
         "INVENTORY_LISTING_DEFAULT_AUTO_NEW",
     ]:
         url = f"{base_url}/{widget}:inventory-data-bus1/getInventory"
-        try:
-            r = api_session.get(url, params=params_new, timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                tracking = data.get("pageInfo", {}).get("trackingData", [])
-                if tracking:
-                    print(f"[ddc_api] NEW widget got {len(tracking)} vehicles from {host}", flush=True)
-                    return tracking[:1]
-        except Exception as e:
-            print(f"[ddc_api] {widget} failed {host}: {e}", flush=True)
+        for attempt in range(2):  # 2 attempts total
+            try:
+                r = api_session.get(url, params=params_new, timeout=15)
+                if r.status_code == 200:
+                    data = r.json()
+                    tracking = data.get("pageInfo", {}).get("trackingData", [])
+                    if tracking:
+                        print(f"[ddc_api] NEW widget got {len(tracking)} vehicles from {host} (attempt {attempt+1})", flush=True)
+                        return tracking[:1]
+                    break  # 200 but empty — no need to retry
+                elif r.status_code in (429, 503) and attempt == 0:
+                    import time as _t; _t.sleep(2)  # backoff before retry
+                else:
+                    break
+            except Exception as e:
+                print(f"[ddc_api] {widget} attempt {attempt+1} failed {host}: {e}", flush=True)
+                if attempt == 0:
+                    import time as _t; _t.sleep(1)
 
     # Strategy 2: ALL-inventory widget, filter to new vehicles in-process
     url_all = f"{base_url}/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory"
