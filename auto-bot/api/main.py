@@ -619,8 +619,14 @@ def _fields_from_dealer_api_vehicle(v: dict) -> dict:
 def _detect_platform_from_html(html: str, domain: str) -> str:
     """Detect platform from HTML content and domain. Extended from detect_platform()."""
     h = html[:8000].lower()
-    # Dealer.com / DDC
-    if 'class="ddc-' in h or 'ddc-content' in h or 'dealer.com' in h or 'ddc.com' in h:
+    # Dealer.com / DDC — match ddc-site class, providerID=DDC meta, and classic signals
+    if (
+        'class="ddc-' in h or 'ddc-content' in h
+        or 'dealer.com' in h or 'ddc.com' in h
+        or 'ddc-site' in h
+        or 'providerid" content="ddc"' in h
+        or "pictures.dealer.com" in h
+    ):
         return "dealer_com"
     # Dealer Inspire
     if 'class="di-' in h or 'dealerinspire' in h or 'dealer-inspire' in h or 'cfassets.dealerinspire.com' in h:
@@ -647,19 +653,42 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
     """
     Dealer.com (DDC) exposes a server-side rendered inventory API.
     GET https://<host>/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory
-    Returns JSON with an `inventory` array.
+    Returns JSON with pageInfo.trackingData (flat vehicle objects) and inventory (detailed).
     """
     url = f"https://{host}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory"
-    params = {"start": 0, "pageSize": 1, "sortBy": "internetPrice asc"}
+    params = {"start": 0, "pageSize": 1, "sortBy": "internetPrice asc", "condition": "new"}
     try:
         r = session.get(url, params=params, timeout=15, verify=False)
         if r.status_code == 200:
             data = r.json()
-            vehicles = data.get("inventory", [])
-            print(f"[ddc_api] got {len(vehicles)} vehicles from {host}", flush=True)
-            return vehicles
+            # Primary: pageInfo.trackingData has flat fields (year, make, model, vin, etc.)
+            tracking = data.get("pageInfo", {}).get("trackingData", [])
+            if tracking:
+                print(f"[ddc_api] got {len(tracking)} vehicles (trackingData) from {host}", flush=True)
+                return tracking
+            # Fallback: top-level inventory array (detailed shape with attributes list)
+            inv = data.get("inventory", [])
+            if inv:
+                print(f"[ddc_api] got {len(inv)} vehicles (inventory) from {host}", flush=True)
+                return inv
     except Exception as e:
         print(f"[ddc_api] failed {host}: {e}", flush=True)
+
+    # Retry without condition filter (some DDC APIs reject the condition param)
+    params_any = {"start": 0, "pageSize": 1, "sortBy": "internetPrice asc"}
+    try:
+        r = session.get(url, params=params_any, timeout=15, verify=False)
+        if r.status_code == 200:
+            data = r.json()
+            tracking = data.get("pageInfo", {}).get("trackingData", [])
+            if tracking:
+                print(f"[ddc_api] got {len(tracking)} vehicles (trackingData, no-cond) from {host}", flush=True)
+                return tracking
+            inv = data.get("inventory", [])
+            if inv:
+                return inv
+    except Exception as e:
+        print(f"[ddc_api] retry failed {host}: {e}", flush=True)
     return []
 
 
