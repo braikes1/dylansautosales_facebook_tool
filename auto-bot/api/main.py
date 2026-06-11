@@ -652,43 +652,58 @@ def _detect_platform_from_html(html: str, domain: str) -> str:
 def _try_ddc_api(host: str, req_lib, session) -> list:
     """
     Dealer.com (DDC) exposes a server-side rendered inventory API.
-    GET https://<host>/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory
-    Returns JSON with pageInfo.trackingData (flat vehicle objects) and inventory (detailed).
+    Tries the new-inventory widget first (INVENTORY_LISTING_DEFAULT_AUTO_NEW),
+    then falls back to the all-inventory widget (INVENTORY_LISTING_DEFAULT_AUTO_ALL)
+    with filtering to new vehicles only.
     """
-    url = f"https://{host}/apis/widget/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory"
-    params = {"start": 0, "pageSize": 1, "sortBy": "internetPrice asc", "condition": "new"}
-    try:
-        r = session.get(url, params=params, timeout=15, verify=False)
-        if r.status_code == 200:
-            data = r.json()
-            # Primary: pageInfo.trackingData has flat fields (year, make, model, vin, etc.)
-            tracking = data.get("pageInfo", {}).get("trackingData", [])
-            if tracking:
-                print(f"[ddc_api] got {len(tracking)} vehicles (trackingData) from {host}", flush=True)
-                return tracking
-            # Fallback: top-level inventory array (detailed shape with attributes list)
-            inv = data.get("inventory", [])
-            if inv:
-                print(f"[ddc_api] got {len(inv)} vehicles (inventory) from {host}", flush=True)
-                return inv
-    except Exception as e:
-        print(f"[ddc_api] failed {host}: {e}", flush=True)
+    base_url = f"https://{host}/apis/widget"
+    params_new = {"start": 0, "pageSize": 1, "sortBy": "internetPrice asc"}
+    params_all = {"start": 0, "pageSize": 50, "sortBy": "internetPrice asc"}
 
-    # Retry without condition filter (some DDC APIs reject the condition param)
-    params_any = {"start": 0, "pageSize": 1, "sortBy": "internetPrice asc"}
+    # Strategy 1: NEW-exclusive widget (returns only new inventory)
+    for widget in [
+        "INVENTORY_LISTING_DEFAULT_AUTO_NEW",
+        "INVENTORY_LISTING_DEFAULT_AUTO_NEW_CERTIFIED",
+    ]:
+        url = f"{base_url}/{widget}:inventory-data-bus1/getInventory"
+        try:
+            r = session.get(url, params=params_new, timeout=15, verify=False)
+            if r.status_code == 200:
+                data = r.json()
+                tracking = data.get("pageInfo", {}).get("trackingData", [])
+                if tracking:
+                    print(f"[ddc_api] NEW widget got {len(tracking)} vehicles from {host}", flush=True)
+                    return tracking[:1]
+        except Exception as e:
+            print(f"[ddc_api] {widget} failed {host}: {e}", flush=True)
+
+    # Strategy 2: ALL-inventory widget, filter to new vehicles in-process
+    url_all = f"{base_url}/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory"
     try:
-        r = session.get(url, params=params_any, timeout=15, verify=False)
+        r = session.get(url_all, params=params_all, timeout=15, verify=False)
         if r.status_code == 200:
             data = r.json()
             tracking = data.get("pageInfo", {}).get("trackingData", [])
+            # Filter to new vehicles first
+            new_vehicles = [
+                v for v in tracking
+                if str(v.get("newOrUsed", "")).lower() == "new"
+                or str(v.get("inventoryType", "")).lower() == "new"
+            ]
+            if new_vehicles:
+                print(f"[ddc_api] ALL widget filtered to {len(new_vehicles)} new from {len(tracking)} total at {host}", flush=True)
+                return new_vehicles[:1]
+            # If no new found, fall through
             if tracking:
-                print(f"[ddc_api] got {len(tracking)} vehicles (trackingData, no-cond) from {host}", flush=True)
-                return tracking
+                print(f"[ddc_api] ALL widget — no new vehicles found at {host}, returning first", flush=True)
+                return tracking[:1]
+            # Fallback: top-level inventory array
             inv = data.get("inventory", [])
             if inv:
-                return inv
+                return inv[:1]
     except Exception as e:
-        print(f"[ddc_api] retry failed {host}: {e}", flush=True)
+        print(f"[ddc_api] ALL widget failed {host}: {e}", flush=True)
+
     return []
 
 
