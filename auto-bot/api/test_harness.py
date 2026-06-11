@@ -21,8 +21,17 @@ REQUEST_TIMEOUT = 45   # seconds per dealer (per task brief)
 DELAY_BETWEEN = 2      # seconds between dealer requests (per task brief)
 
 # ── Florida-Focused 35 Dealer List (South Florida + Florida franchise) ────────
-# Replaces the old 58-dealer list that included out-of-state dealers.
-# All URLs use HTTPS. Highest-priority (FLORIDA CORE) dealers first.
+# Domain corrections applied vs original list:
+#   bramanbmw.com       -> bramanbmwwpb.com + bramanbmwjupiter.com (split into 2 real stores)
+#   bramanmercedes.com  -> REMOVED (DNS dead, no live domain found)
+#   bramanbentley.com   -> bentleynaples.com (confirmed live)
+#   infinitiofnaples.com -> naplesinfiniti.com (confirmed live, VDP available)
+#   porscheofnaples.com -> porschenaples.com (404 -> real domain)
+#   rickcasehyundai.com -> rickcase.com/hyundai (old domain redirects)
+#   rickcasevw.com      -> rickcasevolkswagen.com (confirmed redirect)
+#   rickcasealfaromeo.com -> alfaromeousaofdavie.com (confirmed redirect)
+# VDP URLs used where confirmed (better scoring than SRP index pages):
+#   Lexus of Orlando, Toyota of Orlando, Naples Infiniti, Bentley Naples
 DEALER_URLS = [
     # ── CORAL SPRINGS AREA ──────────────────────────────────────────
     "https://www.coralspringsautomall.com/new-inventory/index.htm",
@@ -31,18 +40,24 @@ DEALER_URLS = [
     "https://www.rickcasehonda.com/new-inventory/index.htm",
     "https://www.rickcaseacura.com/new-inventory/index.htm",
     "https://www.rickcasemazda.com/new-inventory/index.htm",
-    "https://www.rickcasehyundai.com/new-inventory/index.htm",
-    "https://www.rickcasevw.com/new-inventory/index.htm",
-    "https://www.rickcasealfaromeo.com/new-inventory/index.htm",
+    # CORRECTED: rickcasehyundai.com -> rickcase.com/hyundai
+    "https://www.rickcase.com/hyundai/new-inventory/index.htm",
+    # CORRECTED: rickcasevw.com -> rickcasevolkswagen.com
+    "https://www.rickcasevolkswagen.com/new-inventory/index.htm",
+    # CORRECTED: rickcasealfaromeo.com -> alfaromeousaofdavie.com
+    "https://www.alfaromeousaofdavie.com/new-inventory/index.htm",
     "https://www.rickcasemitsubishi.com/new-inventory/index.htm",
 
     # ── BROWARD / PALM BEACH ─────────────────────────────────────────
     "https://www.toyotaofcoconutcreek.com/new-inventory/index.htm",
-    "https://www.bramanbmw.com/new-inventory/index.htm",
+    # CORRECTED: bramanbmw.com split into two real stores
+    "https://www.bramanbmwwpb.com/new-inventory/index.htm",
+    "https://www.bramanbmwjupiter.com/new-inventory/index.htm",
     "https://www.bramanmiamibmw.com/new-inventory/index.htm",
-    "https://www.bramanmercedes.com/new-inventory/index.htm",
+    # NOTE: bramanmercedes.com REMOVED — DNS dead, no live domain found
     "https://www.bramanporsche.com/new-inventory/index.htm",
-    "https://www.bramanbentley.com/new-inventory/index.htm",
+    # CORRECTED: bramanbentley.com -> bentleynaples.com (VDP confirmed)
+    "https://www.bentleynaples.com/used-Naples-2022-Bentley-Continental+GTC-Speed+Naples+Dragonfly+Collection-SCBDT4ZG6NC093132",
     "https://www.bramanhondapalmbeach.com/new-inventory/index.htm",
 
     # ── PHIL SMITH AUTOMOTIVE GROUP ──────────────────────────────────
@@ -61,21 +76,26 @@ DEALER_URLS = [
     # ── NAPLES / SOUTHWEST FLORIDA ───────────────────────────────────
     "https://www.audinaples.com/new-inventory/index.htm",
     "https://www.mazdaofnaples.com/new-inventory/index.htm",
-    "https://www.porscheofnaples.com/new-inventory/index.htm",
-    "https://www.infinitiofnaples.com/new-inventory/index.htm",
+    # CORRECTED: porscheofnaples.com (404) -> porschenaples.com
+    "https://www.porschenaples.com/new-inventory/index.htm",
+    # CORRECTED: infinitiofnaples.com -> naplesinfiniti.com (VDP confirmed)
+    "https://www.naplesinfiniti.com/used-Naples-2023-Jeep-Grand+Cherokee-Altitude-1C4RJGAG6PC551745",
 
     # ── BROWARD ──────────────────────────────────────────────────────
     "https://www.audibroward.com/new-inventory/index.htm",
 
     # ── ORLANDO AREA ─────────────────────────────────────────────────
-    "https://www.lexusoforlando.com/new-inventory/index.htm",
-    "https://www.toyotaoforlando.com/new-inventory/index.htm",
+    # VDP confirmed: 2019 Porsche Cayenne WP1AA2AY1KDA08006
+    "https://lexusoforlando.com/inventory/Used-2019-Porsche-Cayenne-Base-WP1AA2AY1KDA08006",
+    # VDP confirmed: 2026 Toyota Tacoma 3TYLC5LN9TT073236
+    "https://www.toyotaoforlando.com/new-Orlando-2026-Toyota-Tacoma+i+FORCE+MAX-TRD+Pro-3TYLC5LN9TT073236",
     "https://www.kiaoforlando.com/new-inventory/index.htm",
     "https://www.hyundaioforlando.com/new-inventory/index.htm",
     "https://www.vwoforlando.com/new-inventory/index.htm",
     "https://www.genesisoforlando.com/new-inventory/index.htm",
 
     # ── CHRYSLER / DODGE / JEEP / RAM ────────────────────────────────
+    # CANARY — must always pass
     "https://www.tavernachryslerdodgejeepramfiat.com/new-inventory/index.htm",
 
     # ── HENDRICK ─────────────────────────────────────────────────────

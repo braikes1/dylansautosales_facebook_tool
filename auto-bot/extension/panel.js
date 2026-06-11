@@ -1,6 +1,6 @@
 // panel.js
 
-import { runBatchTest, generateCSV } from "./batch_test.js";
+import { runBatchTest, generateCSV, BATCH_DEALER_URLS } from "./batch_test.js";
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -50,6 +50,9 @@ function init() {
   $("#batchTestBtn").addEventListener("click", () => switchView("batch"));
   $("#startBatchBtn").addEventListener("click", startBatchTest);
   $("#downloadCsvBtn").addEventListener("click", downloadCSV);
+  // Dynamic label — single source of truth is BATCH_DEALER_URLS in batch_test.js
+  // Fixes the hardcoded "38 dealers" mismatch in panel.html
+  $("#startBatchBtn").textContent = `▶ Start Test (${BATCH_DEALER_URLS.length} dealers)`;
   renderList();
   renderDetail();
 }

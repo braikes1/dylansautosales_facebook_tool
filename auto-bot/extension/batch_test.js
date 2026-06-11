@@ -1,110 +1,78 @@
 // batch_test.js — AutoBot Batch Test Mode
-// Opens each dealer URL in a background tab, scrapes inventory,
-// scores field extraction, and displays a full report in the panel.
+// Calls the backend /fb/scrape_url endpoint for each dealer and scores results.
+// SINGLE SOURCE OF TRUTH for the dealer list — both panel.js and test_harness.py
+// must stay in sync with this list.
 
-const BATCH_DEALER_URLS = [
-  // ========================================
-  // SOUTH FLORIDA DEALERS (Bryan's Network)
-  // ========================================
-  // Coral Springs Auto Mall
+// Export the URL list so panel.js can read the count for the button label.
+// Domain corrections applied June 2026 — see test_urls_verified.txt for details.
+export const BATCH_DEALER_URLS = [
+  // ── CORAL SPRINGS AREA ──────────────────────────────────────────────────
   "https://www.coralspringsautomall.com/new-inventory/index.htm",
-  
-  // Rick Case Automotive Group
+
+  // ── RICK CASE AUTOMOTIVE GROUP ───────────────────────────────────────────
   "https://www.rickcasehonda.com/new-inventory/index.htm",
-  "https://www.rickcasehyundai.com/new-inventory/index.htm",
   "https://www.rickcaseacura.com/new-inventory/index.htm",
-  "https://www.rickcasevw.com/new-inventory/index.htm",
-  "https://www.rickcasealfaromeo.com/new-inventory/index.htm",
   "https://www.rickcasemazda.com/new-inventory/index.htm",
+  // CORRECTED: rickcasehyundai.com (404) -> rickcase.com/hyundai
+  "https://www.rickcase.com/hyundai/new-inventory/index.htm",
+  // CORRECTED: rickcasevw.com (404) -> rickcasevolkswagen.com
+  "https://www.rickcasevolkswagen.com/new-inventory/index.htm",
+  // CORRECTED: rickcasealfaromeo.com (404) -> alfaromeousaofdavie.com
+  "https://www.alfaromeousaofdavie.com/new-inventory/index.htm",
   "https://www.rickcasemitsubishi.com/new-inventory/index.htm",
-  
-  // Toyota of Coconut Creek
+
+  // ── BROWARD / PALM BEACH ─────────────────────────────────────────────────
   "https://www.toyotaofcoconutcreek.com/new-inventory/index.htm",
-  
-  // Braman Motors (Miami Luxury)
-  "https://www.bramanbmw.com/new-inventory/index.htm",
+  // CORRECTED: bramanbmw.com (wrong) -> split into two real stores
+  "https://www.bramanbmwwpb.com/new-inventory/index.htm",
+  "https://www.bramanbmwjupiter.com/new-inventory/index.htm",
   "https://www.bramanmiamibmw.com/new-inventory/index.htm",
-  "https://www.bramanmercedes.com/new-inventory/index.htm",
+  // NOTE: bramanmercedes.com REMOVED (DNS dead, no live domain found)
   "https://www.bramanporsche.com/new-inventory/index.htm",
-  "https://www.bramanbentley.com/new-inventory/index.htm",
+  // CORRECTED: bramanbentley.com -> bentleynaples.com (VDP URL confirmed)
+  "https://www.bentleynaples.com/used-Naples-2022-Bentley-Continental+GTC-Speed+Naples+Dragonfly+Collection-SCBDT4ZG6NC093132",
   "https://www.bramanhondapalmbeach.com/new-inventory/index.htm",
-  
-  // Phil Smith Automotive Group
+
+  // ── PHIL SMITH AUTOMOTIVE GROUP ──────────────────────────────────────────
+  "https://www.philsmithkia.com/new-inventory/index.htm",
   "https://www.philsmithford.com/new-inventory/index.htm",
   "https://www.philsmithtoyota.com/new-inventory/index.htm",
   "https://www.philsmithnissan.com/new-inventory/index.htm",
-  "https://www.philsmithkia.com/new-inventory/index.htm",
-  
-  // Holman Honda
+
+  // ── OTHER SOUTH FLORIDA ──────────────────────────────────────────────────
   "https://www.holmanhonda.com/new-inventory/index.htm",
-  
-  // ========================================
-  // NATIONAL TEST DEALERS
-  // ========================================
-  // Mercedes-Benz
-  "https://www.mboftampa.com/new-inventory/index.htm",
-  "https://www.mbofbeverlyhills.com/new-inventory/index.htm",
-  // BMW
-  "https://www.bmwofnaples.com/new-inventory/index.htm",
-  "https://www.bmwofsouthmountain.com/new-inventory/index.htm",
-  // Honda
   "https://www.keatinghonda.com/new-inventory/index.htm",
-  "https://www.hendrickhonda.com/new-inventory/index.htm",
-  // Toyota
-  "https://www.toyotaoforlando.com/new-inventory/index.htm",
-  "https://www.toyotaofcoolsprings.com/new-inventory/index.htm",
-  // Ford
-  "https://www.vatlandford.com/new-inventory/index.htm",
-  "https://www.fordofkissimmee.com/new-inventory/index.htm",
-  // Chevrolet
-  "https://www.stingerschevrolet.com/new-inventory/index.htm",
-  "https://www.classicchevrolet.com/new-inventory/index.htm",
-  // Nissan
-  "https://www.nalleynissan.com/new-inventory/index.htm",
-  "https://www.nissanofchattanooga.com/new-inventory/index.htm",
-  // Jeep / CDJR
-  "https://www.tavernachryslerdodgejeepramfiat.com/new-inventory/index.htm",
-  "https://www.hendersondodge.com/new-inventory/index.htm",
-  // Cadillac
-  "https://www.sewellcadillac.com/new-inventory/index.htm",
-  // Audi
+
+  // ── TAMPA / CENTRAL FLORIDA ──────────────────────────────────────────────
+  "https://www.mboftampa.com/new-inventory/index.htm",
+
+  // ── NAPLES / SOUTHWEST FLORIDA ───────────────────────────────────────────
   "https://www.audinaples.com/new-inventory/index.htm",
-  "https://www.audibroward.com/new-inventory/index.htm",
-  "https://www.audiatlanta.com/new-inventory/index.htm",
-  // Lexus
-  "https://www.lexusoforlando.com/new-inventory/index.htm",
-  "https://www.lexusofnashville.com/new-inventory/index.htm",
-  // Acura
-  "https://www.acuranorthscottsdale.com/new-inventory/index.htm",
-  // Hyundai
-  "https://www.hyundaioforlando.com/new-inventory/index.htm",
-  // Kia
-  "https://www.kiaoforlando.com/new-inventory/index.htm",
-  // Subaru
-  "https://www.subaruofwakefield.com/new-inventory/index.htm",
-  "https://www.larrymillersubaru.com/new-inventory/index.htm",
-  // Volkswagen
-  "https://www.vwoforlando.com/new-inventory/index.htm",
-  // Volvo
-  "https://www.volvocarsnaples.com/new-inventory/index.htm",
-  // Mazda
   "https://www.mazdaofnaples.com/new-inventory/index.htm",
-  // Porsche
-  "https://www.porscheofnaples.com/new-inventory/index.htm",
-  // Land Rover
-  "https://www.landroveratl.com/new-inventory/index.htm",
-  // Infiniti
-  "https://www.infinitiofnaples.com/new-inventory/index.htm",
-  // Buick / GMC
-  "https://www.classicbuickgmc.com/new-inventory/index.htm",
-  // Genesis
+  // CORRECTED: porscheofnaples.com (404) -> porschenaples.com
+  "https://www.porschenaples.com/new-inventory/index.htm",
+  // CORRECTED: infinitiofnaples.com -> naplesinfiniti.com (VDP confirmed)
+  "https://www.naplesinfiniti.com/used-Naples-2023-Jeep-Grand+Cherokee-Altitude-1C4RJGAG6PC551745",
+
+  // ── BROWARD ──────────────────────────────────────────────────────────────
+  "https://www.audibroward.com/new-inventory/index.htm",
+
+  // ── ORLANDO AREA ─────────────────────────────────────────────────────────
+  // VDP confirmed: 2019 Porsche Cayenne WP1AA2AY1KDA08006
+  "https://lexusoforlando.com/inventory/Used-2019-Porsche-Cayenne-Base-WP1AA2AY1KDA08006",
+  // VDP confirmed: 2026 Toyota Tacoma 3TYLC5LN9TT073236
+  "https://www.toyotaoforlando.com/new-Orlando-2026-Toyota-Tacoma+i+FORCE+MAX-TRD+Pro-3TYLC5LN9TT073236",
+  "https://www.kiaoforlando.com/new-inventory/index.htm",
+  "https://www.hyundaioforlando.com/new-inventory/index.htm",
+  "https://www.vwoforlando.com/new-inventory/index.htm",
   "https://www.genesisoforlando.com/new-inventory/index.htm",
-  // Mitsubishi
-  "https://www.classicmitsubishi.com/new-inventory/index.htm",
-  // AutoNation
-  "https://www.autonation.com/new-cars",
-  // Hendrick
-  "https://www.hendrickcars.com/new-inventory/index.htm",
+
+  // ── CHRYSLER / DODGE / JEEP / RAM ────────────────────────────────────────
+  // CANARY — must always pass
+  "https://www.tavernachryslerdodgejeepramfiat.com/new-inventory/index.htm",
+
+  // ── HENDRICK ─────────────────────────────────────────────────────────────
+  "https://www.hendrickhonda.com/new-inventory/index.htm",
 ];
 
 const SCORED_FIELDS = [
