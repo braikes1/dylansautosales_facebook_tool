@@ -8,7 +8,14 @@ from urllib.parse import urlparse
 import os
 import re
 import json
+import time as _time
 from typing import List, Optional
+
+# In-memory TTL cache for DDC API results — avoids hammering Dealer.com from
+# the same datacenter IP within a short window (which triggers 429/rate-limit).
+# Key: host string. Value: (timestamp, vehicles_list)
+_DDC_CACHE: dict = {}
+_DDC_CACHE_TTL = 90  # seconds
 
 app = FastAPI()
 
@@ -687,7 +694,18 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
     IMPORTANT: DDC APIs return 403 when a browser User-Agent is sent.
     They expect a plain server-side request with minimal or no UA.
     We use a separate clean session without browser UA for these API calls.
+
+    Results are cached in-process for _DDC_CACHE_TTL seconds to avoid
+    hammering the same host repeatedly (Render single IP → 429 rate-limit).
     """
+    # Check in-memory cache first
+    cached = _DDC_CACHE.get(host)
+    if cached:
+        ts, vehicles = cached
+        if _time.time() - ts < _DDC_CACHE_TTL:
+            print(f"[ddc_api] cache hit for {host} ({len(vehicles)} vehicles)", flush=True)
+            return vehicles
+
     import requests as _req
     # DDC APIs reject browser User-Agent strings — use a plain session without UA
     api_session = _req.Session()
@@ -711,7 +729,9 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
                     tracking = data.get("pageInfo", {}).get("trackingData", [])
                     if tracking:
                         print(f"[ddc_api] NEW widget got {len(tracking)} vehicles from {host} (attempt {attempt+1})", flush=True)
-                        return tracking[:1]
+                        result = tracking[:1]
+                        _DDC_CACHE[host] = (_time.time(), result)
+                        return result
                     break  # 200 but empty — no need to retry
                 elif r.status_code in (429, 503) and attempt == 0:
                     import time as _t; _t.sleep(2)  # backoff before retry
@@ -737,7 +757,9 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
             ]
             if new_vehicles:
                 print(f"[ddc_api] ALL widget filtered to {len(new_vehicles)} new from {len(tracking)} total at {host}", flush=True)
-                return new_vehicles[:1]
+                result = new_vehicles[:1]
+                _DDC_CACHE[host] = (_time.time(), result)
+                return result
             # ALL widget has NO new vehicles — do not return a used car
             # Return empty so callers (sitemap, generic VDP) can try
             print(f"[ddc_api] ALL widget zero new in {len(tracking)} results at {host} — skipping", flush=True)
