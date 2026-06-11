@@ -493,8 +493,22 @@ def scrape_url(body: ScrapeUrlPayload):
         payload = HtmlPayload(url=url, html=html, images=imgs)
         return extract_html(payload)
 
-    # ── Step 6: Complete failure ─────────────────────────────────────────────
-    return {"error": f"fetch_failed: all strategies exhausted for {url}", "url": url}
+    # ── Step 6: Complete failure — return graceful unsupported flag ──────────
+    # Instead of a raw error, report that this page cannot be scraped server-side.
+    # This happens with sites behind Cloudflare JS challenge or Akamai hard blocks.
+    parsed_url = urlparse(url)
+    return {
+        "error": f"fetch_failed: all strategies exhausted for {url}",
+        "unsupported": True,
+        "unsupported_reason": "cloudflare_or_bot_blocked",
+        "message": (
+            f"Unable to scrape {parsed_url.netloc} server-side. "
+            "This site is protected by Cloudflare or similar bot-detection. "
+            "Please navigate to an individual vehicle listing page and use "
+            "the extension's tab-based scraping instead."
+        ),
+        "url": url,
+    }
 
 
 
@@ -655,7 +669,16 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
     Tries the new-inventory widget first (INVENTORY_LISTING_DEFAULT_AUTO_NEW),
     then falls back to the all-inventory widget (INVENTORY_LISTING_DEFAULT_AUTO_ALL)
     with filtering to new vehicles only.
+
+    IMPORTANT: DDC APIs return 403 when a browser User-Agent is sent.
+    They expect a plain server-side request with minimal or no UA.
+    We use a separate clean session without browser UA for these API calls.
     """
+    import requests as _req
+    # DDC APIs reject browser User-Agent strings — use a plain session without UA
+    api_session = _req.Session()
+    api_session.verify = False
+
     base_url = f"https://{host}/apis/widget"
     params_new = {"start": 0, "pageSize": 1, "sortBy": "internetPrice asc"}
     params_all = {"start": 0, "pageSize": 50, "sortBy": "internetPrice asc"}
@@ -663,11 +686,10 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
     # Strategy 1: NEW-exclusive widget (returns only new inventory)
     for widget in [
         "INVENTORY_LISTING_DEFAULT_AUTO_NEW",
-        "INVENTORY_LISTING_DEFAULT_AUTO_NEW_CERTIFIED",
     ]:
         url = f"{base_url}/{widget}:inventory-data-bus1/getInventory"
         try:
-            r = session.get(url, params=params_new, timeout=15, verify=False)
+            r = api_session.get(url, params=params_new, timeout=15)
             if r.status_code == 200:
                 data = r.json()
                 tracking = data.get("pageInfo", {}).get("trackingData", [])
@@ -680,7 +702,7 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
     # Strategy 2: ALL-inventory widget, filter to new vehicles in-process
     url_all = f"{base_url}/INVENTORY_LISTING_DEFAULT_AUTO_ALL:inventory-data-bus1/getInventory"
     try:
-        r = session.get(url_all, params=params_all, timeout=15, verify=False)
+        r = api_session.get(url_all, params=params_all, timeout=15)
         if r.status_code == 200:
             data = r.json()
             tracking = data.get("pageInfo", {}).get("trackingData", [])
@@ -693,11 +715,9 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
             if new_vehicles:
                 print(f"[ddc_api] ALL widget filtered to {len(new_vehicles)} new from {len(tracking)} total at {host}", flush=True)
                 return new_vehicles[:1]
-            # If no new found, fall through
             if tracking:
                 print(f"[ddc_api] ALL widget — no new vehicles found at {host}, returning first", flush=True)
                 return tracking[:1]
-            # Fallback: top-level inventory array
             inv = data.get("inventory", [])
             if inv:
                 return inv[:1]
@@ -795,56 +815,81 @@ def _try_cdk_api(host: str, req_lib, session) -> list:
 
 def _try_sitemap_vdp(host: str, session, max_vdps: int = 1) -> list:
     """
-    Fallback: grab the dealer's sitemap XML, find VDP URLs (contain /vin/ or /vehicle/),
-    fetch the first one and extract JSON-LD from it. Returns list of partial vehicle dicts.
+    Fallback: grab the dealer's sitemap XML, find VDP URLs (contain /vin/ or /vehicle/
+    or DDC hash-style /new/<Make>/...).
+    Fetch the first VDP(s) and extract JSON-LD. Returns list of partial vehicle dicts.
+
+    NOTE: Some dealer CDNs (DDC) block browser User-Agent on sitemaps and VDP pages.
+    We try with the provided session first, then fall back to a bare session with no UA.
     """
+    import requests as _req
+
     sitemap_urls = [
         f"https://{host}/sitemap.xml",
         f"https://{host}/sitemap_index.xml",
         f"https://{host}/inventory-sitemap.xml",
     ]
     vdp_urls = []
+
+    # Build a no-UA fallback session (works for DDC APIs/sitemaps that block browser UA)
+    bare_session = _req.Session()
+    bare_session.verify = False
+
     for sm_url in sitemap_urls:
-        try:
-            r = session.get(sm_url, timeout=10, verify=False)
-            if r.status_code == 200 and "<url>" in r.text:
-                # Find VDP-shaped URLs: contain /vin/ or have 17-char VIN in path
-                # OR match DDC hash-style: /new/<Make>/YYYY-...-<32hexchars>.htm
-                # OR match other platforms: /vehicle/, /inventory/, /new/<make>/
-                vdp_pattern = re.compile(
-                    r"/vin/|/vehicle/|/VIN/"
-                    r"|[A-HJ-NPR-Z0-9]{17}"   # 17-char VIN in URL
-                    r"|/new/[A-Za-z]"           # DDC new inventory: /new/Chrysler/...
-                    r"|/used/[A-Za-z]"          # DDC used: /used/Chevrolet/...
-                )
-                for m in re.finditer(r"<loc>(https?://[^<]+)</loc>", r.text):
-                    loc = m.group(1)
-                    if vdp_pattern.search(loc):
-                        # Skip pure SRP/category pages (no year+model in path = not a VDP)
-                        # DDC VDPs end with a 32-char hex hash .htm
-                        is_ddc_vdp = re.search(r"-[0-9a-f]{32}\.htm$", loc)
-                        is_vin_vdp = re.search(r"[A-HJ-NPR-Z0-9]{17}", loc)
-                        is_generic_vdp = re.search(r"/vin/|/vehicle/", loc, re.IGNORECASE)
-                        if is_ddc_vdp or is_vin_vdp or is_generic_vdp:
-                            vdp_urls.append(loc)
-                if vdp_urls:
-                    print(f"[sitemap] found {len(vdp_urls)} VDP URLs in {sm_url}", flush=True)
-                    break
-        except Exception:
-            pass
+        for sess in [session, bare_session]:
+            try:
+                r = sess.get(sm_url, timeout=10, verify=False)
+                if r.status_code == 200 and "<url>" in r.text:
+                    # Find VDP-shaped URLs: contain /vin/ or have 17-char VIN in path
+                    # OR match DDC hash-style: /new/<Make>/YYYY-...-<32hexchars>.htm
+                    # OR match other platforms: /vehicle/, /inventory/, /new/<make>/
+                    vdp_pattern = re.compile(
+                        r"/vin/|/vehicle/|/VIN/"
+                        r"|[A-HJ-NPR-Z0-9]{17}"   # 17-char VIN in URL
+                        r"|/new/[A-Za-z]"           # DDC new inventory: /new/Chrysler/...
+                        r"|/used/[A-Za-z]"          # DDC used: /used/Chevrolet/...
+                    )
+                    for m in re.finditer(r"<loc>(https?://[^<]+)</loc>", r.text):
+                        loc = m.group(1)
+                        if vdp_pattern.search(loc):
+                            # Filter: only include actual per-vehicle pages
+                            is_ddc_vdp = re.search(r"-[0-9a-f]{32}\.htm$", loc)
+                            is_vin_vdp = re.search(r"[A-HJ-NPR-Z0-9]{17}", loc)
+                            is_generic_vdp = re.search(r"/vin/|/vehicle/", loc, re.IGNORECASE)
+                            if is_ddc_vdp or is_vin_vdp or is_generic_vdp:
+                                # Prefer new-inventory VDPs — put /new/ first, /used/ last
+                                if re.search(r"/new/", loc, re.IGNORECASE):
+                                    vdp_urls.insert(0, loc)
+                                else:
+                                    vdp_urls.append(loc)
+                    if vdp_urls:
+                        print(f"[sitemap] found {len(vdp_urls)} VDP URLs in {sm_url}", flush=True)
+                        break
+            except Exception:
+                pass
+        if vdp_urls:
+            break
 
     results = []
     for vdp_url in vdp_urls[:max_vdps]:
-        try:
-            r = session.get(vdp_url, timeout=20, verify=False)
-            if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
-                fields = extract_jsonld(soup)
-                if fields:
-                    print(f"[sitemap_vdp] extracted {list(fields.keys())} from {vdp_url}", flush=True)
-                    results.append(fields)
-        except Exception as e:
-            print(f"[sitemap_vdp] {vdp_url} failed: {e}", flush=True)
+        # Filter: only fetch new-inventory VDPs (skip /used/ URLs when looking at new-inventory page)
+        # Allow both new and used for now — caller decides relevance
+        fetched = False
+        for sess in [bare_session, session]:
+            try:
+                r = sess.get(vdp_url, timeout=20, verify=False)
+                if r.status_code == 200:
+                    soup = BeautifulSoup(r.text, "html.parser")
+                    fields = extract_jsonld(soup)
+                    if fields:
+                        print(f"[sitemap_vdp] extracted {list(fields.keys())} from {vdp_url}", flush=True)
+                        results.append(fields)
+                        fetched = True
+                        break
+            except Exception as e:
+                print(f"[sitemap_vdp] {vdp_url} failed: {e}", flush=True)
+        if not fetched:
+            print(f"[sitemap_vdp] all sessions failed for {vdp_url}", flush=True)
     return results
 
 
