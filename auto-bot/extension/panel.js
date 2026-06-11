@@ -555,10 +555,24 @@ function scrapeVehiclesOnPage() {
     const stockMatch  = text.match(/Stock\s*#?:?\s*([A-Z0-9\-]+)/i);
     const stockNumber = stockMatch ? stockMatch[1] : null;
 
-    const imgRaw =
-      pickAttr(card, ["img[src]", "img[data-src]", "img[data-original]"], "src") ||
-      pickAttr(card, ["img[data-src]", "img[data-original]"], "data-src") ||
-      null;
+    function isVehicleImage(url) {
+      if (!url || typeof url !== "string") return false;
+      if (/video|\.mp4|\.webm|blob:|\/play\/|youtube|vimeo/i.test(url)) return false;
+      if (/logo|banner|icon|badge|sprite|placeholder|spacer|pixel|tracking|ad[_\-]|_ad\.|\/ads?\//i.test(url)) return false;
+      if (/data:image\/gif/.test(url)) return false; // tracking pixels
+      return true;
+    }
+
+    const allImgs = Array.from(card.querySelectorAll("img[src],img[data-src],img[data-original]"));
+    let imgRaw = null;
+    for (const img of allImgs) {
+      const candidate = img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("data-original");
+      const resolved = abs(candidate);
+      if (resolved && isVehicleImage(resolved)) {
+        imgRaw = candidate;
+        break;
+      }
+    }
     const image = abs(imgRaw);
 
     out.push({ title, price: bestPrice, mileage, vin, stockNumber, image, detailUrl, msrp });
