@@ -732,9 +732,6 @@ def _try_ddc_api(host: str, req_lib, session) -> list:
             # ALL widget has NO new vehicles — do not return a used car
             # Return empty so callers (sitemap, generic VDP) can try
             print(f"[ddc_api] ALL widget zero new in {len(tracking)} results at {host} — skipping", flush=True)
-            inv = data.get("inventory", [])
-            if inv:
-                return inv[:1]
     except Exception as e:
         print(f"[ddc_api] ALL widget failed {host}: {e}", flush=True)
 
