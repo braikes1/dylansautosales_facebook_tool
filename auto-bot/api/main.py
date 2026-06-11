@@ -974,17 +974,9 @@ def extract_from_platform_api(url: str, platform: str, html: str, req_lib) -> di
             return v
         return _fields_from_dealer_api_vehicle(v)
 
-    # Universal fallback: sitemap VDP → JSON-LD
-    sitemap_results = _try_sitemap_vdp(full_host, session, max_vdps=1)
-    if sitemap_results and isinstance(sitemap_results[0], dict):
-        first = sitemap_results[0]
-        # Sitemap results may already be field dicts from extract_jsonld
-        if any(k in first for k in ("Year", "Make", "VIN")):
-            return first
-        return _fields_from_dealer_api_vehicle(first)
-
-    # If platform was not confirmed as DDC, try the DDC API anyway as a blind probe
-    # (many large dealer sites run DDC but we couldn't detect it from blocked SRP HTML)
+    # Blind DDC probe FIRST (fast — single HTTPS call, no HTML parsing)
+    # DDC NEW widget returns only new vehicles and is faster than a sitemap+VDP fetch.
+    # Many large dealer sites run DDC but can't be detected from blocked SRP HTML.
     if platform != "dealer_com":
         blind_ddc = _try_ddc_api(full_host, req_lib, session)
         if not blind_ddc:
@@ -993,7 +985,17 @@ def extract_from_platform_api(url: str, platform: str, html: str, req_lib) -> di
             v = blind_ddc[0]
             if isinstance(v, dict) and any(k in v for k in ("Year", "Make", "VIN")):
                 return v
-            return _fields_from_dealer_api_vehicle(v)
+            fields = _fields_from_dealer_api_vehicle(v)
+            return fields
+
+    # Universal fallback: sitemap VDP → JSON-LD
+    sitemap_results = _try_sitemap_vdp(full_host, session, max_vdps=1)
+    if sitemap_results and isinstance(sitemap_results[0], dict):
+        first = sitemap_results[0]
+        # Sitemap results may already be field dicts from extract_jsonld
+        if any(k in first for k in ("Year", "Make", "VIN")):
+            return first
+        return _fields_from_dealer_api_vehicle(first)
 
     # Last resort: scrape VDP link from SRP page
     generic = _try_generic_vdp(full_host, session)
