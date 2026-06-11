@@ -927,35 +927,6 @@ def _try_generic_vdp(host: str, session) -> dict:
         return {}
 
 
-def _enrich_colors_from_vdp(fields: dict, vdp_url: str, session) -> None:
-    """
-    Fetch a VDP page and pull exterior/interior color from JSON-LD.
-    Mutates `fields` in-place. Only fills fields that are currently empty.
-    Used when DDC trackingData returns short color codes (e.g. 'Ack').
-    Uses bare session first (no UA) since DDC VDPs work without UA.
-    """
-    import requests as _req
-    bare = _req.Session()
-    bare.verify = False
-    for sess in [bare, session]:
-        try:
-            r = sess.get(vdp_url, timeout=15, verify=False)
-            if r.status_code != 200:
-                continue
-            soup = BeautifulSoup(r.text, "html.parser")
-            jsonld = extract_jsonld(soup)
-            if jsonld.get("Exterior Color") and not fields.get("Exterior Color"):
-                fields["Exterior Color"] = jsonld["Exterior Color"]
-                print(f"[enrich_colors] ext color from VDP: {fields['Exterior Color']}", flush=True)
-            if jsonld.get("Interior Color") and not fields.get("Interior Color"):
-                fields["Interior Color"] = jsonld["Interior Color"]
-                print(f"[enrich_colors] int color from VDP: {fields['Interior Color']}", flush=True)
-            if jsonld.get("Exterior Color") or jsonld.get("Interior Color"):
-                break
-        except Exception as e:
-            print(f"[enrich_colors] {vdp_url}: {e}", flush=True)
-
-
 def extract_from_platform_api(url: str, platform: str, html: str, req_lib) -> dict:
     """
     Try platform-specific API calls to get structured vehicle data.
@@ -990,30 +961,7 @@ def extract_from_platform_api(url: str, platform: str, html: str, req_lib) -> di
         # Vehicles from sitemap strategy are already field dicts
         if isinstance(v, dict) and any(k in v for k in ("Year", "Make", "VIN")):
             return v
-        fields = _fields_from_dealer_api_vehicle(v)
-        # If DDC returned short color codes (3-4 char), enrich from VDP JSON-LD
-        if not fields.get("Exterior Color") and isinstance(v, dict) and v.get("link"):
-            vdp_url = f"https://{full_host}{v['link']}"
-            _enrich_colors_from_vdp(fields, vdp_url, session)
-        return fields
-
-    # Blind DDC probe — try before sitemap because DDC API returns richer fields
-    # (internetPrice, exteriorColor, interiorColor) that VDP JSON-LD often omits.
-    # Many DDC sites can't be detected from blocked SRP HTML.
-    if platform != "dealer_com":
-        blind_ddc = _try_ddc_api(full_host, req_lib, session)
-        if not blind_ddc:
-            blind_ddc = _try_ddc_api(host, req_lib, session)
-        if blind_ddc:
-            v = blind_ddc[0]
-            if isinstance(v, dict) and any(k in v for k in ("Year", "Make", "VIN")):
-                return v
-            fields = _fields_from_dealer_api_vehicle(v)
-            # Enrich colors from VDP if needed
-            if not fields.get("Exterior Color") and isinstance(v, dict) and v.get("link"):
-                vdp_url = f"https://{full_host}{v['link']}"
-                _enrich_colors_from_vdp(fields, vdp_url, session)
-            return fields
+        return _fields_from_dealer_api_vehicle(v)
 
     # Universal fallback: sitemap VDP → JSON-LD
     sitemap_results = _try_sitemap_vdp(full_host, session, max_vdps=1)
@@ -1023,6 +971,18 @@ def extract_from_platform_api(url: str, platform: str, html: str, req_lib) -> di
         if any(k in first for k in ("Year", "Make", "VIN")):
             return first
         return _fields_from_dealer_api_vehicle(first)
+
+    # If platform was not confirmed as DDC, try the DDC API anyway as a blind probe
+    # (many large dealer sites run DDC but we couldn't detect it from blocked SRP HTML)
+    if platform != "dealer_com":
+        blind_ddc = _try_ddc_api(full_host, req_lib, session)
+        if not blind_ddc:
+            blind_ddc = _try_ddc_api(host, req_lib, session)
+        if blind_ddc:
+            v = blind_ddc[0]
+            if isinstance(v, dict) and any(k in v for k in ("Year", "Make", "VIN")):
+                return v
+            return _fields_from_dealer_api_vehicle(v)
 
     # Last resort: scrape VDP link from SRP page
     generic = _try_generic_vdp(full_host, session)
