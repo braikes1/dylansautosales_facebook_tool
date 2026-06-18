@@ -81,12 +81,20 @@ async function downloadImagesAsBase64(urls) {
 async function scrapeDetailTab(detailUrl, activeTab = false) {
   const tab = await chrome.tabs.create({ url: detailUrl, active: activeTab });
 
-  return new Promise((resolve, reject) => {
-    const onUpdated = async (tabId, info) => {
-      if (tabId !== tab.id || info.status !== "complete") return;
-      chrome.tabs.onUpdated.removeListener(onUpdated);
+  // Ensures scrape logic runs exactly once — via onUpdated OR the 12s fallback,
+  // whichever fires first. Set to true as the first line of runScrape().
+  let scrapeStarted = false;
 
-      // ── Step 1: Cookie / GDPR banner dismiss ───────────────────────────────
+  return new Promise((resolve, reject) => {
+
+    // Always-safe tab closer — called on every exit path (success, error, fallback).
+    const closeTab = () => { try { chrome.tabs.remove(tab.id); } catch {} };
+
+    // ── Core scrape logic (shared by onUpdated and 12s fallback) ─────────────
+    const runScrape = async () => {
+      scrapeStarted = true; // mark before any await — prevents fallback double-run
+
+      // ── Step 1: Cookie / GDPR banner dismiss ─────────────────────────────
       // Do this FIRST — banners block JS execution and image loading.
       // Dismiss immediately on page-complete, before any wait.
       try {
@@ -118,7 +126,7 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
         await new Promise(r => setTimeout(r, 600));
       } catch { /* non-fatal */ }
 
-      // ── Step 2: Signal-based wait for vehicle content ──────────────────────
+      // ── Step 2: Signal-based wait for vehicle content ────────────────────
       // Poll every 500ms for up to 10s waiting for vehicle-specific signals:
       //   - A 17-char VIN in the page text
       //   - A price pattern ($XX,XXX)
@@ -160,7 +168,7 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
         console.log("[sw] content timeout after 10s — scraping whatever is loaded");
       }
 
-      // ── Step 3: Viewport scroll to trigger lazy-loaded gallery images ───────
+      // ── Step 3: Viewport scroll to trigger lazy-loaded gallery images ─────
       // Now that content is confirmed (or timeout), scroll to trigger any
       // intersection-observer-based lazy loading. We await the full scroll
       // duration synchronously using a Promise that resolves when done.
@@ -189,7 +197,7 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
         await new Promise(r => setTimeout(r, 2000));
       } catch { /* non-fatal */ }
 
-      // ── Step 4: Gallery readiness check with one retry ─────────────────────
+      // ── Step 4: Gallery readiness check with one retry ───────────────────
       // After scroll, count gallery-sized images. If still too few,
       // wait 3 more seconds (covers sites with slow CDN response).
       try {
@@ -206,7 +214,7 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
         }
       } catch { /* non-fatal */ }
 
-      // ── Step 5: Scrape HTML + images ───────────────────────────────────────
+      // ── Step 5: Scrape HTML + images ─────────────────────────────────────
       try {
         const [inj] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -267,15 +275,32 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
         const fields   = await resp.json().catch(() => ({}));
         const aiImages = Array.isArray(fields.images) ? fields.images : [];
 
-        chrome.tabs.remove(tab.id);
+        closeTab();
         resolve({ fields, images: aiImages.length ? aiImages : (images || []).map(i => i.src), html });
       } catch (err) {
-        try { chrome.tabs.remove(tab.id); } catch {}
+        closeTab();
         reject(err);
       }
+    }; // end runScrape
+
+    // ── onUpdated: fires when tab reports "complete" ──────────────────────────
+    const onUpdated = async (tabId, info) => {
+      if (tabId !== tab.id || info.status !== "complete") return;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      await runScrape();
     };
 
     chrome.tabs.onUpdated.addListener(onUpdated);
+
+    // ── 12s fallback: runs if "complete" never fires (bot detection / endless load) ──
+    // Scrapes whatever is currently loaded in the tab, then closes it.
+    setTimeout(async () => {
+      if (scrapeStarted) return; // onUpdated already ran — nothing to do
+      console.log("[sw] 12s fallback — tab never reached 'complete', scraping current state");
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      await runScrape();
+    }, 12000);
+
   });
 }
 
