@@ -1,6 +1,6 @@
 // panel.js
 
-import { runBatchTest, generateCSV, BATCH_DEALER_URLS } from "./batch_test.js";
+import { runBatchTest, generateCSV } from "./batch_test.js";
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -50,9 +50,6 @@ function init() {
   $("#batchTestBtn").addEventListener("click", () => switchView("batch"));
   $("#startBatchBtn").addEventListener("click", startBatchTest);
   $("#downloadCsvBtn").addEventListener("click", downloadCSV);
-  // Dynamic label — single source of truth is BATCH_DEALER_URLS in batch_test.js
-  // Fixes the hardcoded "38 dealers" mismatch in panel.html
-  $("#startBatchBtn").textContent = `▶ Start Test (${BATCH_DEALER_URLS.length} dealers)`;
   renderList();
   renderDetail();
 }
@@ -286,25 +283,12 @@ function openDetailFor(vehicle) {
   state.detail = { base: vehicle, fields: {}, images: [], url: vehicle.detailUrl, html: "", loading: true };
   switchView("detail");
   renderDetail();
-  let responded = false;
-  const fallbackTimer = setTimeout(() => {
-    if (responded) return;
-    responded = true;
-    state.detail.loading = false;
-    state.detail.fields = { Description: "Request timed out. The server may be waking up — try again in 30 seconds." };
-    state.detail.images = [];
-    renderDetail();
-  }, 50000);
-
   chrome.runtime.sendMessage(
     { type: "FETCH_DETAIL_VIA_API", detailUrl: vehicle.detailUrl },
     (resp) => {
-      if (responded) return;
-      responded = true;
-      clearTimeout(fallbackTimer);
       if (!resp || !resp.ok) {
         state.detail.loading = false;
-        state.detail.fields = { Description: resp?.error || "Could not reach server. Try again in 30 seconds." };
+        state.detail.fields = {};
         state.detail.images = [];
         renderDetail();
         return;
@@ -555,24 +539,10 @@ function scrapeVehiclesOnPage() {
     const stockMatch  = text.match(/Stock\s*#?:?\s*([A-Z0-9\-]+)/i);
     const stockNumber = stockMatch ? stockMatch[1] : null;
 
-    function isVehicleImage(url) {
-      if (!url || typeof url !== "string") return false;
-      if (/video|\.mp4|\.webm|blob:|\/play\/|youtube|vimeo/i.test(url)) return false;
-      if (/logo|banner|icon|badge|sprite|placeholder|spacer|pixel|tracking|ad[_\-]|_ad\.|\/ads?\//i.test(url)) return false;
-      if (/data:image\/gif/.test(url)) return false; // tracking pixels
-      return true;
-    }
-
-    const allImgs = Array.from(card.querySelectorAll("img[src],img[data-src],img[data-original]"));
-    let imgRaw = null;
-    for (const img of allImgs) {
-      const candidate = img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("data-original");
-      const resolved = abs(candidate);
-      if (resolved && isVehicleImage(resolved)) {
-        imgRaw = candidate;
-        break;
-      }
-    }
+    const imgRaw =
+      pickAttr(card, ["img[src]", "img[data-src]", "img[data-original]"], "src") ||
+      pickAttr(card, ["img[data-src]", "img[data-original]"], "data-src") ||
+      null;
     const image = abs(imgRaw);
 
     out.push({ title, price: bestPrice, mileage, vin, stockNumber, image, detailUrl, msrp });
