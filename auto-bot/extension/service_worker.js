@@ -81,7 +81,7 @@ async function downloadImagesAsBase64(urls) {
 async function scrapeDetailTab(detailUrl, activeTab = false) {
   const tab = await chrome.tabs.create({ url: detailUrl, active: activeTab });
 
-  return new Promise((resolve, reject) => {
+  const scrapePromise = new Promise((resolve, reject) => {
     const onUpdated = async (tabId, info) => {
       if (tabId !== tab.id || info.status !== "complete") return;
       chrome.tabs.onUpdated.removeListener(onUpdated);
@@ -277,6 +277,18 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
 
     chrome.tabs.onUpdated.addListener(onUpdated);
   });
+
+  // ── Hard deadline — tab ALWAYS closes within 20s ─────────────────────────
+  // Fires if the page never reaches "complete" (bot detection, endless spinner).
+  // Closes the tab and rejects so the caller can surface a clean error.
+  const hardDeadline = new Promise((_, reject) =>
+    setTimeout(() => {
+      try { chrome.tabs.remove(tab.id); } catch {}
+      reject(new Error("hard deadline: tab force-closed after 20s"));
+    }, 20000)
+  );
+
+  return Promise.race([scrapePromise, hardDeadline]);
 }
 
 // ====== Message router ======
