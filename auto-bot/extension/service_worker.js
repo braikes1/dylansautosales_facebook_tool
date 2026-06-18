@@ -355,43 +355,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // ====== BATCH TEST handler — use backend scrape_url (same path as live extension) ======
-  // Previously this opened active tabs (slow, bot-detectable, different code path than live use).
-  // Now it calls the backend /fb/scrape_url endpoint directly — same as FETCH_DETAIL_VIA_API.
-  // This ensures batch test scores match what the extension actually produces for the user.
+  // ====== BATCH TEST handler — active tab to bypass bot detection ======
   if (msg.type === "BATCH_SCRAPE_URL" && msg.url) {
     (async () => {
       try {
-        // PRIMARY: backend server-side scrape (matches live extension code path)
-        const serverResp = await fetch(`${API_BASE}/fb/scrape_url`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: msg.url }),
-          signal: AbortSignal.timeout(45000),
-        });
-
-        if (!serverResp.ok) throw new Error("scrape_url HTTP " + serverResp.status);
-        const serverData = await serverResp.json();
-
-        // If backend returned an error (403 etc.) — still return it so batch test can score 0
-        if (serverData.error) {
-          console.log("[sw] batch scrape backend error:", serverData.error);
-          sendResponse({ ok: false, error: serverData.error, fields: {} });
-          return;
-        }
-
-        // Backend succeeded — return fields directly (same shape as live extension)
-        sendResponse({ ok: true, fields: serverData });
-
+        const data = await scrapeDetailTab(msg.url, true); // active tab — looks like real user
+        sendResponse({ ok: true, fields: data.fields || {} });
       } catch (err) {
-        // On timeout or network error: fall back to tab scrape so the test still runs
-        console.log("[sw] batch backend failed, falling back to tab:", err.message);
-        try {
-          const data = await scrapeDetailTab(msg.url, true);
-          sendResponse({ ok: true, fields: data.fields || {} });
-        } catch (tabErr) {
-          sendResponse({ ok: false, error: tabErr.message || String(tabErr) });
-        }
+        sendResponse({ ok: false, error: err.message || String(err) });
       }
     })();
     return true;
