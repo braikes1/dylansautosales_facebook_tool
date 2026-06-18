@@ -1,4 +1,9 @@
 # api/main.py
+
+# ── Feature flags ──────────────────────────────────────────────────────────────
+# Set to True to re-enable DALL-E 3 / GPT-4o vision scrub feature.
+SCRUB_ENABLED = False
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
@@ -323,11 +328,15 @@ def scrub_image(body: ScrubPayload):
     Downloads the image, sends it to GPT-4o vision to detect dealer
     watermarks/branding, then uses DALL-E 3 inpainting to return a
     clean version. Falls back to the original URL on any error.
+    Disabled for v1 launch — set SCRUB_ENABLED = True to re-enable.
     """
+    url = body.image_url
+    if not SCRUB_ENABLED:
+        return {"scrubbed_url": url, "scrubbed": False}
+
     import base64
     import requests as req
 
-    url = body.image_url
     try:
         # Fetch the image
         r = req.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
