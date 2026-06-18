@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import os
 import re
 import json
@@ -439,7 +439,8 @@ def scrape_url(body: ScrapeUrlPayload):
             for img in soup.find_all("img"):
                 src = img.get("src") or img.get("data-src") or ""
                 if src:
-                    imgs.append(ImageCandidate(src=src, alt=img.get("alt") or ""))
+                    abs_src = urljoin(url, src)  # resolve relative / protocol-relative URLs
+                    imgs.append(ImageCandidate(src=abs_src, alt=img.get("alt") or ""))
                 if len(imgs) >= 60:
                     break
             payload = HtmlPayload(url=url, html=html, images=imgs)
@@ -483,7 +484,9 @@ def scrape_url(body: ScrapeUrlPayload):
 
         filled = [k for k in SCORED_FIELDS if result.get(k)]
         print(f"[scrape_url] final coverage after API: {len(filled)}/10 — {filled}", flush=True)
-        result["images"] = []
+        # Promote images carried through _fields_from_dealer_api_vehicle (private key _images)
+        api_images = result.pop("_images", [])
+        result["images"] = api_images
         result["platform"] = platform
         return result
 
@@ -506,7 +509,8 @@ def scrape_url(body: ScrapeUrlPayload):
             for img in soup.find_all("img"):
                 src = img.get("src") or img.get("data-src") or ""
                 if src:
-                    imgs.append(ImageCandidate(src=src, alt=img.get("alt") or ""))
+                    abs_src = urljoin(url, src)  # resolve relative / protocol-relative URLs
+                    imgs.append(ImageCandidate(src=abs_src, alt=img.get("alt") or ""))
                 if len(imgs) >= 60:
                     break
             payload = HtmlPayload(url=url, html=html, images=imgs)
@@ -631,6 +635,39 @@ def _fields_from_dealer_api_vehicle(v: dict) -> dict:
     desc = _first("description", "Description", "longDescription", "comments")
     if desc and len(desc) > 20:
         result["Description"] = desc.strip()[:2000]
+
+    # Images — DDC/DealerOn/CDK APIs carry photo URLs in several common shapes:
+    #   photos: ["url1", "url2", ...]
+    #   images: ["url1", ...]
+    #   imageUrls: ["url1", ...]
+    #   imagesJson: '["url1", ...]'
+    #   photoUrl / thumbnailUrl (single string)
+    raw_imgs: list = []
+    for img_key in ("photos", "images", "imageUrls", "vehicleImages", "photoUrls"):
+        val = v.get(img_key)
+        if isinstance(val, list):
+            raw_imgs = [str(u) for u in val if u and str(u).startswith("http")]
+            if raw_imgs:
+                break
+        elif isinstance(val, str) and val.strip().startswith("["):
+            import json as _json
+            try:
+                parsed = _json.loads(val)
+                if isinstance(parsed, list):
+                    raw_imgs = [str(u) for u in parsed if u and str(u).startswith("http")]
+                    if raw_imgs:
+                        break
+            except Exception:
+                pass
+    # Single-photo keys as last resort
+    if not raw_imgs:
+        for single_key in ("photoUrl", "thumbnailUrl", "imageUrl", "primaryPhotoUrl"):
+            u = v.get(single_key)
+            if u and str(u).startswith("http"):
+                raw_imgs = [str(u)]
+                break
+    if raw_imgs:
+        result["_images"] = raw_imgs[:10]  # carry images forward under private key
 
     fuel = _first("fuelType", "fuel", "Fuel Type")
     if fuel:
