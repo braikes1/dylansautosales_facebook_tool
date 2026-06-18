@@ -62,6 +62,7 @@ class HtmlPayload(BaseModel):
     url: str
     html: str
     images: Optional[List[ImageCandidate]] = None
+    is_vdp: bool = True  # True = single VDP (trust DOM images); False = list page (use AI filter)
 
 
 def extract_json_object(raw: str, label: str = "") -> dict:
@@ -252,7 +253,7 @@ def extract_html(body: HtmlPayload):
                 "Contact us for pricing and availability details."
             )
 
-    # ---------- 2) Images via LLM ----------
+    # ---------- 2) Images ----------
     images_out: List[str] = []
 
     if body.images:
@@ -266,50 +267,72 @@ def extract_html(body: HtmlPayload):
             for c in body.images
             if c.src
         ]
-        slim = candidates[:60]
 
-        if slim:
-            list_page_note = (
-                "NOTE: This is an inventory LIST page with multiple vehicles. "
-                "Only pick photos for the FIRST vehicle listed.\n\n"
-                if is_list_page else ""
-            )
-            img_prompt = (
-                "You are selecting vehicle photos from a dealership listing.\n"
-                "You will be given a JSON array of candidate <img> elements.\n"
-                f"{list_page_note}"
-                "Each item includes a URL and metadata.\n\n"
-                "Goal:\n"
-                "- Keep images that are clearly the car itself (exterior/interior photos\n"
-                "  in the main gallery or carousel).\n"
-                "- Exclude logos, icons, badges, tiny thumbnails, social icons, brand\n"
-                "  logos, profile pictures, 'no image' placeholders, dealer logos.\n\n"
-                "Return ONLY valid JSON in this form:\n"
-                '{\n  "images": ["url1", "url2", "..."]\n}\n\n'
-                "Here are the candidates:\n"
-                f"{json.dumps(slim, indent=2)}"
-            )
+        if body.is_vdp:
+            # VDP path: trust the DOM scrape. The extension already ran gallery-first
+            # selection and dedup, so just return the candidates in order, capped at 12.
+            # No AI filter — AI misclassifies VDPs with related-vehicle carousels as list
+            # pages and returns only the first car's photo.
+            def _strip_qs(u):
+                try:
+                    return u.split("?")[0].split("#")[0]
+                except Exception:
+                    return u
 
-            try:
-                img_resp = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": img_prompt}],
+            seen_paths: set = set()
+            for c in candidates:
+                key = _strip_qs(c["src"])
+                if key not in seen_paths:
+                    seen_paths.add(key)
+                    images_out.append(c["src"])
+                if len(images_out) >= 12:
+                    break
+            print(f"[images] VDP path — returning {len(images_out)} DOM images directly", flush=True)
+
+        else:
+            # List-page path: use AI to filter to the first vehicle's photos only.
+            slim = candidates[:60]
+            if slim:
+                list_page_note = (
+                    "NOTE: This is an inventory LIST page with multiple vehicles. "
+                    "Only pick photos for the FIRST vehicle listed.\n\n"
+                    if is_list_page else ""
                 )
-                raw_img = img_resp.choices[0].message.content
-                img_obj = extract_json_object(raw_img, label="images")
-                images_out = [u for u in img_obj.get("images", []) if isinstance(u, str)]
-            except Exception:
-                images_out = []
+                img_prompt = (
+                    "You are selecting vehicle photos from a dealership listing.\n"
+                    "You will be given a JSON array of candidate <img> elements.\n"
+                    f"{list_page_note}"
+                    "Each item includes a URL and metadata.\n\n"
+                    "Goal:\n"
+                    "- Keep images that are clearly the car itself (exterior/interior photos\n"
+                    "  in the main gallery or carousel).\n"
+                    "- Exclude logos, icons, badges, tiny thumbnails, social icons, brand\n"
+                    "  logos, profile pictures, 'no image' placeholders, dealer logos.\n\n"
+                    "Return ONLY valid JSON in this form:\n"
+                    '{\n  "images": ["url1", "url2", "..."]\n}\n\n'
+                    "Here are the candidates:\n"
+                    f"{json.dumps(slim, indent=2)}"
+                )
+                try:
+                    img_resp = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "user", "content": img_prompt}],
+                    )
+                    raw_img = img_resp.choices[0].message.content
+                    img_obj = extract_json_object(raw_img, label="images")
+                    images_out = [u for u in img_obj.get("images", []) if isinstance(u, str)]
+                except Exception:
+                    images_out = []
 
-        if not images_out and candidates:
-            candidates_sorted = sorted(
-                candidates,
-                key=lambda c: (c.get("width") or 0) * (c.get("height") or 0),
-                reverse=True,
-            )
-            images_out = [
-                c["src"] for c in candidates_sorted[:8] if c.get("src")
-            ]
+            if not images_out and candidates:
+                candidates_sorted = sorted(
+                    candidates,
+                    key=lambda c: (c.get("width") or 0) * (c.get("height") or 0),
+                    reverse=True,
+                )
+                images_out = [
+                    c["src"] for c in candidates_sorted[:8] if c.get("src")
+                ]
 
     result["images"] = images_out
 

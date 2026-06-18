@@ -229,25 +229,67 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
 
             const VIDEO_URL_RE = /video|\.mp4|blob:|\/play\b/i;
 
-            const images = Array.from(document.querySelectorAll("img"))
-              .map(img => {
-                const raw = img.currentSrc || img.getAttribute("src") || img.getAttribute("data-src") ||
-                            img.getAttribute("data-lazy") || img.getAttribute("data-original") || "";
-                return {
-                  src:    abs(raw),
-                  alt:    img.alt || "",
-                  width:  img.naturalWidth  || img.width  || 0,
-                  height: img.naturalHeight || img.height || 0,
-                };
-              })
-              .filter(i => {
-                if (!i.src)                              return false;
-                if (videoSrcs.has(i.src))                return false;
-                if (VIDEO_URL_RE.test(i.src))            return false;
-                if (i.width  > 0 && i.width  < 200)     return false;
-                if (i.height > 0 && i.height < 200)     return false;
-                return true;
-              });
+            // Strip query-string for dedup comparison (dealers serve same image at ?w=800 etc.)
+            const stripQs = (u) => { try { return u.split("?")[0].split("#")[0]; } catch { return u; } };
+
+            const imgToObj = (img) => {
+              const raw = img.currentSrc || img.getAttribute("src") || img.getAttribute("data-src") ||
+                          img.getAttribute("data-lazy") || img.getAttribute("data-original") || "";
+              return {
+                src:    abs(raw),
+                alt:    img.alt || "",
+                width:  img.naturalWidth  || img.width  || 0,
+                height: img.naturalHeight || img.height || 0,
+              };
+            };
+
+            const isValid = (i) => {
+              if (!i.src)                   return false;
+              if (videoSrcs.has(i.src))     return false;
+              if (VIDEO_URL_RE.test(i.src)) return false;
+              return true;
+            };
+
+            // ── Gallery-first strategy ────────────────────────────────────────
+            // Try known gallery/carousel containers before the full-page scrape.
+            // If any container yields 2+ large (≥400px wide) images, use only those.
+            // This prevents related-vehicle carousels from polluting the results.
+            const GALLERY_SELS = [
+              '[class*="gallery"]', '[class*="Gallery"]',
+              '[class*="media"]',   '[class*="carousel"]',
+              '[class*="swiper"]',  '[data-gallery]',
+              '[class*="hero"]',
+            ];
+            let galleryImages = [];
+            for (const sel of GALLERY_SELS) {
+              const containers = Array.from(document.querySelectorAll(sel));
+              const imgs = containers
+                .flatMap(c => Array.from(c.querySelectorAll("img")))
+                .map(imgToObj)
+                .filter(i => isValid(i) && (i.width >= 400));
+              if (imgs.length >= 2) {
+                galleryImages = imgs;
+                break;
+              }
+            }
+
+            // ── Generic fallback (raised threshold: ≥400px wide) ─────────────
+            const rawImages = galleryImages.length >= 2
+              ? galleryImages
+              : Array.from(document.querySelectorAll("img"))
+                  .map(imgToObj)
+                  .filter(i => isValid(i) && (i.width >= 400));
+
+            // ── Deduplicate by path (strip query strings) ────────────────────
+            const seen = new Set();
+            const images = [];
+            for (const i of rawImages) {
+              const key = stripQs(i.src);
+              if (!seen.has(key)) {
+                seen.add(key);
+                images.push(i);
+              }
+            }
 
             return { url, html, images };
           },
@@ -261,7 +303,7 @@ async function scrapeDetailTab(detailUrl, activeTab = false) {
             "Content-Type": "application/json",
             "User-Agent": randomUA(),
           },
-          body: JSON.stringify({ url, html, images }),
+          body: JSON.stringify({ url, html, images, is_vdp: true }),
         });
 
         const fields   = await resp.json().catch(() => ({}));
