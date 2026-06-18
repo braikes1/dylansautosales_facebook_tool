@@ -315,9 +315,7 @@
     return null;
   }
 
-  async function selectVehicleTypeOther(scope) {
-    const targetText = "Other";
-
+  async function selectVehicleType(scope, typeText = "Car/Truck") {
     const vtField = findVehicleTypeField(scope);
     if (!vtField) {
       LOG("Vehicle type field not found");
@@ -333,22 +331,28 @@
     const listboxes = Array.from(document.querySelectorAll('[role="listbox"]'));
     let option = null;
 
-    for (const lb of listboxes) {
-      const opts = Array.from(lb.querySelectorAll('[role="option"]'));
-      option = opts.find((o) => {
-        const txt = (o.textContent || "").trim().toLowerCase();
-        return txt === targetText.toLowerCase() || txt.includes(targetText.toLowerCase());
-      });
+    // Try the requested type first (e.g. "Car/Truck"), fall back to "Other"
+    const attempts = [typeText, "Other"];
+    for (const attempt of attempts) {
+      for (const lb of listboxes) {
+        const opts = Array.from(lb.querySelectorAll('[role="option"]'));
+        option = opts.find((o) => {
+          const txt = (o.textContent || "").trim().toLowerCase();
+          return txt === attempt.toLowerCase() || txt.includes(attempt.toLowerCase());
+        });
+        if (option) break;
+      }
       if (option) {
         LOG("Found vehicle type option:", option.textContent.trim());
         option.scrollIntoView({ block: "nearest" });
         option.click();
         break;
       }
+      LOG(`Vehicle type option '${attempt}' not found — trying fallback`);
     }
 
     if (!option) {
-      LOG("Vehicle type option 'Other' not found");
+      LOG("No vehicle type option found (tried Car/Truck and Other)");
     } else {
       await sleep(200);
     }
@@ -584,7 +588,7 @@
       return;
     }
 
-    await selectVehicleTypeOther(composer)
+    await selectVehicleType(composer, "Car/Truck");
 
     // Price
     if (listing.Price) {
