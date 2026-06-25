@@ -1,5 +1,5 @@
 # api/main.py
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +9,19 @@ import re
 import json
 from typing import List, Optional
 
+import bcrypt
+import jwt as pyjwt
+from supabase import create_client, Client
+
 app = FastAPI()
+
+
+# ========= Supabase client =========
+_SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+_SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+_JWT_SECRET = os.environ.get("JWT_SECRET", "")
+
+supabase: Client = create_client(_SUPABASE_URL, _SUPABASE_SERVICE_KEY) if _SUPABASE_URL and _SUPABASE_SERVICE_KEY else None  # type: ignore
 
 
 @app.get("/health")
@@ -194,3 +206,85 @@ def extract_html(body: HtmlPayload):
     result["images"] = images_out
 
     return result
+
+
+# =========================================================================
+# AUTH ENDPOINTS
+# =========================================================================
+
+class AuthBody(BaseModel):
+    email: str
+    password: str
+
+
+def _issue_jwt(email: str, tier: str) -> str:
+    """Sign a JWT containing email and tier using JWT_SECRET."""
+    return pyjwt.encode({"email": email, "tier": tier}, _JWT_SECRET, algorithm="HS256")
+
+
+@app.post("/auth/register")
+def auth_register(body: AuthBody):
+    """
+    Register a new user.
+    - Hashes password with bcrypt
+    - Inserts into Supabase 'users' table (email, password_hash, tier='standard')
+    - Returns a signed JWT on success
+    - Returns 400 if the email is already registered
+    """
+    # Check for existing user
+    existing = supabase.table("users").select("email").eq("email", body.email).execute()
+    if existing.data:
+        raise HTTPException(status_code=400, detail="An account with that email already exists.")
+
+    # Hash password — never store plaintext
+    password_hash = bcrypt.hashpw(body.password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+    # Insert new user
+    supabase.table("users").insert({
+        "email": body.email,
+        "password_hash": password_hash,
+        "tier": "standard",
+    }).execute()
+
+    token = _issue_jwt(body.email, "standard")
+    return {"token": token}
+
+
+@app.post("/auth/login")
+def auth_login(body: AuthBody):
+    """
+    Authenticate an existing user.
+    - Looks up user by email in Supabase
+    - Verifies password with bcrypt
+    - Returns a signed JWT on success, 401 on failure
+    """
+    result = supabase.table("users").select("email, password_hash, tier").eq("email", body.email).execute()
+    if not result.data:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    user = result.data[0]
+    if not bcrypt.checkpw(body.password.encode("utf-8"), user["password_hash"].encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    token = _issue_jwt(user["email"], user["tier"])
+    return {"token": token}
+
+
+@app.get("/auth/verify")
+def auth_verify(authorization: Optional[str] = Header(default=None)):
+    """
+    Verify a JWT from the Authorization: Bearer <token> header.
+    - Returns { email, tier } if valid
+    - Returns 401 if missing, invalid, or expired
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or malformed Authorization header.")
+
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = pyjwt.decode(token, _JWT_SECRET, algorithms=["HS256"])
+    except pyjwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
+
+    return {"email": payload.get("email"), "tier": payload.get("tier")}
+
