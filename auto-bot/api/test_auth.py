@@ -56,7 +56,7 @@ class TestRegister:
         assert "token" in body
         payload = pyjwt.decode(body["token"], "test-secret-for-unit-tests", algorithms=["HS256"])
         assert payload["email"] == "new@test.com"
-        assert payload["tier"] == "standard"
+        assert payload["tier"] == "free"
 
     def test_register_duplicate_email_returns_400(self):
         """Existing email → 400 with clear message."""

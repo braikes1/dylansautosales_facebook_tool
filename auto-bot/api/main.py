@@ -236,7 +236,7 @@ def auth_register(body: AuthBody):
     """
     Register a new user.
     - Hashes password with bcrypt
-    - Inserts into Supabase 'users' table (email, password_hash, tier='standard')
+    - Inserts into Supabase 'users' table (email, password_hash, tier='free')
     - Returns a signed JWT on success
     - Returns 400 if the email is already registered
     """
@@ -252,10 +252,10 @@ def auth_register(body: AuthBody):
     supabase.table("users").insert({
         "email": body.email,
         "password_hash": password_hash,
-        "tier": "standard",
+        "tier": "free",
     }).execute()
 
-    token = _issue_jwt(body.email, "standard")
+    token = _issue_jwt(body.email, "free")
     return {"token": token}
 
 
