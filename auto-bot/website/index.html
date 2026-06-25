@@ -437,6 +437,14 @@
     }
 
     .pricing-card.coming-soon { opacity: .65; pointer-events: none; }
+    /* "Your current plan" label — replaces Get started when user already subscribes */
+    .btn-pricing-current-plan {
+      display: block; width: 100%; padding: 13px 0;
+      background: none; border: 1.5px solid rgba(255,255,255,.25);
+      border-radius: var(--r-sm);
+      font-size: 15px; font-weight: 600; color: rgba(255,255,255,.65);
+      text-align: center; cursor: default; letter-spacing: .01em;
+    }
     .coming-soon-badge {
       display: inline-flex;
       background: var(--gray-4); color: var(--gray-1);
@@ -894,7 +902,7 @@
               Email support
             </li>
           </ul>
-          <a class="btn-pricing btn-pricing-white" href="signup.html">Get started</a>
+          <a class="btn-pricing btn-pricing-white" href="signup.html" id="standardPlanBtn">Get started</a>
         </div>
 
         <!-- Pro -->
@@ -1097,6 +1105,31 @@
         }
       });
     });
+
+    // ── Pricing: swap Standard button to "Your current plan" if already subscribed ──
+    (async () => {
+      const token = localStorage.getItem('postbot_token');
+      if (!token) return; // not logged in — leave button as-is
+
+      try {
+        const resp = await fetch(
+          'https://dylansautosales-facebook-tool.onrender.com/auth/verify',
+          { headers: { 'Authorization': `Bearer ${token}` } }
+        );
+        if (!resp.ok) return; // invalid token — leave button as-is
+        const { tier } = await resp.json();
+
+        if (tier === 'standard') {
+          const btn = document.getElementById('standardPlanBtn');
+          if (btn) {
+            btn.outerHTML =
+              '<span class="btn-pricing-current-plan">✓ Your current plan</span>';
+          }
+        }
+      } catch {
+        // Network error — leave button unchanged
+      }
+    })();
   </script>
 
 </body>
