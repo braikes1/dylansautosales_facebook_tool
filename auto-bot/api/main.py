@@ -330,8 +330,8 @@ def billing_create_checkout(authorization: Optional[str] = Header(default=None))
         line_items=[{"price": _STRIPE_PRICE_STANDARD, "quantity": 1}],
         customer_email=email,
         client_reference_id=email,
-        success_url=f"{_WEBSITE_BASE}/account.html?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{_WEBSITE_BASE}/index.html#pricing",
+        success_url=f"{_WEBSITE_BASE}/success.html?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{_WEBSITE_BASE}/cancel.html",
     )
     return {"checkout_url": session.url}
 
