@@ -263,6 +263,17 @@
     }
     .api-error.visible { display: block; }
 
+    /* ── Loading overlay ── */
+    .page-loading { display: flex; align-items: center; justify-content: center; min-height: 40vh; }
+    .page-loading-spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--gray-4);
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    .page-hidden { opacity: 0; pointer-events: none; }
+
     /* ── Footer ── */
     .footer {
       background: var(--ink-2); color: rgba(255,255,255,.5);
@@ -339,7 +350,12 @@
       <h1 class="page-title page-enter">My Account</h1>
       <p class="page-sub page-enter-2">Manage your PostBot subscription and access the Chrome extension.</p>
 
-      <div class="stagger" id="cardStack">
+      <!-- Loading state — hidden once /auth/verify returns -->
+      <div class="page-loading" id="pageLoading">
+        <div class="page-loading-spinner" aria-label="Loading your account…"></div>
+      </div>
+
+      <div class="stagger page-hidden" id="cardStack">
 
         <!-- ── Account Overview ── -->
         <div class="card" id="accountCard">
@@ -408,7 +424,7 @@
         </div>
 
         <!-- ── Get the Extension ── -->
-        <div class="card">
+        <div class="card" id="extensionCard">
           <div class="card-head">
             <div class="card-head-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -461,36 +477,12 @@
   <script>
     const API = 'https://dylansautosales-facebook-tool.onrender.com';
 
-    // ── JWT decode (no library — just base64) ──
-    function decodeJWT(token) {
-      try {
-        const payload = token.split('.')[1];
-        // Pad base64 to multiple of 4
-        const padded = payload + '==='.slice((payload.length + 3) % 4);
-        return JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
-      } catch {
-        return null;
-      }
-    }
-
     // ── Auth guard — redirect to login if no token ──
     const token = localStorage.getItem('postbot_token');
     if (!token) {
       window.location.replace('login.html');
-      throw new Error('No token'); // stop script execution
+      throw new Error('No token');
     }
-
-    const claims = decodeJWT(token);
-    if (!claims) {
-      localStorage.clear();
-      window.location.replace('login.html');
-      throw new Error('Bad token');
-    }
-
-    const { email, tier } = claims;
-
-    // ── Populate nav ──
-    document.getElementById('navEmail').textContent = email;
 
     // ── Frosted nav on scroll ──
     const nav = document.getElementById('nav');
@@ -505,115 +497,155 @@
       window.location.href = 'login.html';
     });
 
-    // ── Populate account card ──
-    document.getElementById('displayEmail').textContent = email;
+    // ── Fetch live user data from /auth/verify ──
+    (async () => {
+      const pageLoading = document.getElementById('pageLoading');
+      const cardStack   = document.getElementById('cardStack');
 
-    // Member since (JWT iat if present, else placeholder)
-    if (claims.iat) {
-      const d = new Date(claims.iat * 1000);
-      document.getElementById('memberSince').textContent =
-        'Member since ' + d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    }
-
-    // ── Plan display ──
-    const planDisplay    = document.getElementById('planDisplay');
-    const subscribeWrap  = document.getElementById('subscribeWrap');
-    const manageCard     = document.getElementById('manageCard');
-
-    if (tier === 'standard') {
-      planDisplay.innerHTML =
-        `<span class="plan-badge paid">
-           <span class="plan-badge-dot" aria-hidden="true"></span>
-           Standard Plan &mdash; Active
-         </span>`;
-      manageCard.style.display = '';
-    } else {
-      planDisplay.innerHTML =
-        `<span class="plan-badge free">
-           <span class="plan-badge-dot" aria-hidden="true"></span>
-           Free &mdash; No active subscription
-         </span>`;
-      subscribeWrap.style.display = '';
-    }
-
-    // ── Subscribe: POST /billing/create-checkout → redirect ──
-    const subscribeBtn   = document.getElementById('subscribeBtn');
-    const checkoutError  = document.getElementById('checkoutError');
-
-    subscribeBtn.addEventListener('click', async () => {
-      subscribeBtn.disabled = true;
-      subscribeBtn.classList.add('loading');
-      checkoutError.classList.remove('visible');
-
+      let email, tier;
       try {
-        const resp = await fetch(`${API}/billing/create-checkout`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
+        const resp = await fetch(`${API}/auth/verify`, {
+          headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await resp.json().catch(() => ({}));
-        if (resp.ok && data.checkout_url) {
-          window.location.href = data.checkout_url;
-        } else {
-          checkoutError.textContent = data.detail || `Error ${resp.status} — please try again.`;
+        if (!resp.ok) {
+          // Token invalid/expired — boot to login
+          localStorage.removeItem('postbot_token');
+          window.location.replace('login.html');
+          return;
+        }
+        const data = await resp.json();
+        email = data.email;
+        tier  = data.tier;
+      } catch {
+        // Network error — fall back to JWT decode so page still renders
+        try {
+          const payload = token.split('.')[1];
+          const padded  = payload + '==='.slice((payload.length + 3) % 4);
+          const claims  = JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
+          email = claims.email;
+          tier  = claims.tier;
+        } catch {
+          localStorage.removeItem('postbot_token');
+          window.location.replace('login.html');
+          return;
+        }
+      }
+
+      // ── Hide spinner, reveal cards ──
+      pageLoading.style.display = 'none';
+      cardStack.classList.remove('page-hidden');
+
+      // ── Populate nav ──
+      document.getElementById('navEmail').textContent = email;
+
+      // ── Populate email ──
+      document.getElementById('displayEmail').textContent = email;
+
+      // ── Plan display ──
+      const planDisplay   = document.getElementById('planDisplay');
+      const subscribeWrap = document.getElementById('subscribeWrap');
+      const manageCard    = document.getElementById('manageCard');
+      const extensionCard = document.getElementById('extensionCard');
+
+      if (tier === 'standard') {
+        planDisplay.innerHTML =
+          `<span class="plan-badge paid">
+             <span class="plan-badge-dot" aria-hidden="true"></span>
+             Standard Plan &mdash; Active
+           </span>`;
+        manageCard.style.display    = '';   // show Manage Subscription card
+        subscribeWrap.style.display = 'none'; // hide Subscribe button
+        extensionCard.style.display = '';   // show extension CTA
+      } else {
+        planDisplay.innerHTML =
+          `<span class="plan-badge free">
+             <span class="plan-badge-dot" aria-hidden="true"></span>
+             Free &mdash; No active subscription
+           </span>`;
+        subscribeWrap.style.display = '';    // show Subscribe button
+        manageCard.style.display    = 'none'; // hide Manage card
+        extensionCard.style.display = 'none'; // hide extension CTA
+      }
+
+      // ── Subscribe: POST /billing/create-checkout → redirect ──
+      const subscribeBtn  = document.getElementById('subscribeBtn');
+      const checkoutError = document.getElementById('checkoutError');
+
+      subscribeBtn.addEventListener('click', async () => {
+        subscribeBtn.disabled = true;
+        subscribeBtn.classList.add('loading');
+        checkoutError.classList.remove('visible');
+
+        try {
+          const resp = await fetch(`${API}/billing/create-checkout`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (resp.ok && data.checkout_url) {
+            window.location.href = data.checkout_url;
+          } else {
+            checkoutError.textContent = data.detail || `Error ${resp.status} — please try again.`;
+            checkoutError.classList.add('visible');
+            subscribeBtn.disabled = false;
+            subscribeBtn.classList.remove('loading');
+          }
+        } catch {
+          checkoutError.textContent = 'Could not reach the server. Please try again.';
           checkoutError.classList.add('visible');
           subscribeBtn.disabled = false;
           subscribeBtn.classList.remove('loading');
         }
-      } catch {
-        checkoutError.textContent = 'Could not reach the server. Please try again.';
-        checkoutError.classList.add('visible');
-        subscribeBtn.disabled = false;
-        subscribeBtn.classList.remove('loading');
-      }
-    });
+      });
 
-    // ── Manage: POST /billing/portal → redirect ──
-    const manageBtn  = document.getElementById('manageBtn');
-    const portalError = document.getElementById('portalError');
+      // ── Manage: POST /billing/portal → redirect ──
+      const manageBtn   = document.getElementById('manageBtn');
+      const portalError = document.getElementById('portalError');
 
-    manageBtn.addEventListener('click', async () => {
-      manageBtn.disabled = true;
-      manageBtn.classList.add('loading');
-      portalError.classList.remove('visible');
+      manageBtn.addEventListener('click', async () => {
+        manageBtn.disabled = true;
+        manageBtn.classList.add('loading');
+        portalError.classList.remove('visible');
 
-      try {
-        const resp = await fetch(`${API}/billing/portal`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (resp.ok && data.portal_url) {
-          window.location.href = data.portal_url;
-        } else {
-          portalError.textContent = data.detail || `Error ${resp.status} — please try again.`;
+        try {
+          const resp = await fetch(`${API}/billing/portal`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (resp.ok && data.portal_url) {
+            window.location.href = data.portal_url;
+          } else {
+            portalError.textContent = data.detail || `Error ${resp.status} — please try again.`;
+            portalError.classList.add('visible');
+            manageBtn.disabled = false;
+            manageBtn.classList.remove('loading');
+          }
+        } catch {
+          portalError.textContent = 'Could not reach the server. Please try again.';
           portalError.classList.add('visible');
           manageBtn.disabled = false;
           manageBtn.classList.remove('loading');
         }
-      } catch {
-        portalError.textContent = 'Could not reach the server. Please try again.';
-        portalError.classList.add('visible');
-        manageBtn.disabled = false;
-        manageBtn.classList.remove('loading');
-      }
-    });
-
-    // ── Scroll reveal ──
-    const observer = new IntersectionObserver(entries => {
-      entries.forEach(e => {
-        if (e.isIntersecting) {
-          e.target.classList.add('visible');
-          observer.unobserve(e.target);
-        }
       });
-    }, { threshold: 0.1 });
 
-    document.querySelectorAll('.reveal, .stagger').forEach(el => observer.observe(el));
+      // ── Scroll reveal ──
+      const observer = new IntersectionObserver(entries => {
+        entries.forEach(e => {
+          if (e.isIntersecting) {
+            e.target.classList.add('visible');
+            observer.unobserve(e.target);
+          }
+        });
+      }, { threshold: 0.1 });
 
-    // Kick off stagger immediately (above fold)
-    setTimeout(() => {
-      document.getElementById('cardStack').classList.add('visible');
-    }, 120);
+      document.querySelectorAll('.reveal, .stagger').forEach(el => observer.observe(el));
+
+      // Kick off stagger immediately (above fold)
+      setTimeout(() => {
+        cardStack.classList.add('visible');
+      }, 120);
+    })();
   </script>
 
 </body>
