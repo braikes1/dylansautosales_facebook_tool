@@ -295,7 +295,13 @@ def auth_verify(authorization: Optional[str] = Header(default=None)):
     except pyjwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token.")
 
-    return {"email": payload.get("email"), "tier": payload.get("tier")}
+    email = payload.get("email")
+    result = supabase.table("users").select("email, tier").eq("email", email).execute()
+    if not result.data:
+        raise HTTPException(status_code=401, detail="User not found.")
+
+    user = result.data[0]
+    return {"email": user["email"], "tier": user["tier"]}
 
 
 # =========================================================================

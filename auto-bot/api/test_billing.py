@@ -305,6 +305,7 @@ class TestExistingEndpointsUntouched:
     def test_auth_verify_still_works(self):
         from api.main import app
         client = TestClient(app)
-        resp = client.get("/auth/verify", headers=_auth_header("x@y.com"))
+        with patch("api.main.supabase", _mock_supabase_user("x@y.com", tier="standard")):
+            resp = client.get("/auth/verify", headers=_auth_header("x@y.com"))
         assert resp.status_code == 200
         assert resp.json()["email"] == "x@y.com"

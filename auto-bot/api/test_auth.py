@@ -155,18 +155,38 @@ class TestVerify:
     def _make_token(self, email: str, tier: str, secret: str = "test-secret-for-unit-tests") -> str:
         return pyjwt.encode({"email": email, "tier": tier}, secret, algorithm="HS256")
 
-    def test_verify_valid_token_returns_email_and_tier(self):
-        """Valid JWT → 200 with {email, tier}."""
+    def test_verify_valid_token_returns_live_tier_from_db(self):
+        """Valid JWT → 200 with {email, tier} where tier is LIVE from Supabase, not baked in token."""
+        import bcrypt
         from api.main import app
         client = TestClient(app)
 
-        token = self._make_token("user@test.com", "standard")
-        resp = client.get("/auth/verify", headers={"Authorization": f"Bearer {token}"})
+        # Token baked with stale tier='free', but DB has tier='standard'
+        token = self._make_token("user@test.com", "free")
+        db_hash = bcrypt.hashpw(b"pass", bcrypt.gensalt()).decode()
+        mock_sb = _mock_supabase_existing_user("user@test.com", db_hash, tier="standard")
+
+        with patch("api.main.supabase", mock_sb):
+            resp = client.get("/auth/verify", headers={"Authorization": f"Bearer {token}"})
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["email"] == "user@test.com"
+        # Must return live DB tier ('standard'), NOT the stale JWT tier ('free')
         assert body["tier"] == "standard"
+
+    def test_verify_user_not_found_in_db_returns_401(self):
+        """Valid JWT signature but user deleted from DB → 401."""
+        from api.main import app
+        client = TestClient(app)
+
+        token = self._make_token("ghost@test.com", "standard")
+        mock_sb = _mock_supabase_no_user()
+
+        with patch("api.main.supabase", mock_sb):
+            resp = client.get("/auth/verify", headers={"Authorization": f"Bearer {token}"})
+
+        assert resp.status_code == 401
 
     def test_verify_invalid_token_returns_401(self):
         """Tampered or garbage token → 401."""
