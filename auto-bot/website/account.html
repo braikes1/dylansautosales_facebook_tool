@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Account — PostBot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red:       #A41414;
+      --red-dark:  #7e0f0f;
+      --red-bg:    #fff5f5;
+      --ink:       #0f0f10;
+      --ink-2:     #1c1c1e;
+      --ink-3:     #3a3a3c;
+      --gray-1:    #636366;
+      --gray-2:    #8e8e93;
+      --gray-3:    #c7c7cc;
+      --gray-4:    #e5e5ea;
+      --gray-5:    #f2f2f7;
+      --gray-6:    #f9f9fb;
+      --white:     #ffffff;
+      --green:     #16a34a;
+      --green-bg:  #f0fdf4;
+      --green-bd:  #bbf7d0;
+
+      --nav-h:     64px;
+      --r-sm:      10px;
+      --r-md:      16px;
+      --r-lg:      20px;
+
+      --shadow-sm: 0 2px 8px rgba(0,0,0,.07), 0 1px 3px rgba(0,0,0,.05);
+      --shadow-md: 0 6px 24px rgba(0,0,0,.09), 0 2px 8px rgba(0,0,0,.05);
+      --shadow-lg: 0 16px 48px rgba(0,0,0,.10), 0 4px 12px rgba(0,0,0,.06);
+
+      --ease-out:  cubic-bezier(.16,1,.3,1);
+      --t-fast:    150ms;
+      --t-mid:     220ms;
+      --t-slow:    400ms;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                   Helvetica, Arial, sans-serif;
+      background: var(--gray-6);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    /* ── Nav ── */
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--nav-h);
+      display: flex; align-items: center;
+      transition: background var(--t-mid) ease, box-shadow var(--t-mid) ease,
+                  backdrop-filter var(--t-mid) ease;
+    }
+    .nav.scrolled {
+      background: rgba(255,255,255,.82);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      box-shadow: 0 1px 0 rgba(0,0,0,.08);
+    }
+    .nav-inner {
+      max-width: 1100px; margin: 0 auto; padding: 0 24px;
+      width: 100%;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: inherit;
+    }
+    .nav-logo-slot {
+      width: 32px; height: 32px;
+      background: var(--red); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 800; font-size: 14px;
+    }
+    .nav-wordmark { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+
+    .nav-right {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .nav-email {
+      font-size: 13px; color: var(--gray-1);
+      max-width: 200px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .btn-logout {
+      height: 34px; padding: 0 14px;
+      background: none; border: 1.5px solid var(--gray-4);
+      border-radius: var(--r-sm);
+      font-size: 13px; font-weight: 500; color: var(--gray-1);
+      cursor: pointer;
+      transition: border-color var(--t-fast) ease, color var(--t-fast) ease,
+                  background var(--t-fast) ease;
+    }
+    .btn-logout:hover { border-color: var(--gray-3); color: var(--ink); background: var(--gray-5); }
+
+    /* ── Page body ── */
+    .page {
+      padding-top: calc(var(--nav-h) + 40px);
+      padding-bottom: 80px;
+    }
+    .content { max-width: 680px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── Page title ── */
+    .page-title {
+      font-size: 28px; font-weight: 700; letter-spacing: -.02em;
+      color: var(--ink); margin-bottom: 6px;
+    }
+    .page-sub { font-size: 15px; color: var(--gray-1); margin-bottom: 36px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--white);
+      border: 1px solid var(--gray-4);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      margin-bottom: 16px;
+      transition: box-shadow var(--t-mid) var(--ease-out);
+    }
+    .card:hover { box-shadow: var(--shadow-md); }
+
+    .card-head {
+      padding: 22px 28px 18px;
+      border-bottom: 1px solid var(--gray-5);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .card-head-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--gray-5);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--gray-1); flex-shrink: 0;
+    }
+    .card-head-icon svg { width: 18px; height: 18px; }
+    .card-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+    .card-subtitle { font-size: 12px; color: var(--gray-2); margin-top: 1px; }
+    .card-body { padding: 24px 28px; }
+
+    /* ── Account rows ── */
+    .account-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--gray-5);
+    }
+    .account-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .account-row:first-child { padding-top: 0; }
+
+    .row-label {
+      font-size: 13px; color: var(--gray-2); font-weight: 500;
+      margin-bottom: 3px; letter-spacing: .02em; text-transform: uppercase;
+    }
+    .row-value { font-size: 15px; color: var(--ink); font-weight: 500; }
+
+    /* ── Plan badge ── */
+    .plan-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 12px; border-radius: 100px;
+      font-size: 13px; font-weight: 600;
+    }
+    .plan-badge.paid {
+      background: var(--green-bg);
+      border: 1.5px solid var(--green-bd);
+      color: var(--green);
+    }
+    .plan-badge.free {
+      background: var(--gray-5);
+      border: 1.5px solid var(--gray-4);
+      color: var(--gray-1);
+    }
+    .plan-badge-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor; flex-shrink: 0;
+    }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      height: 42px; padding: 0 20px;
+      background: var(--red); color: white;
+      border: none; border-radius: var(--r-sm);
+      font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      text-decoration: none;
+      box-shadow: 0 2px 6px rgba(164,20,20,.25);
+      transition: background var(--t-fast) ease, transform var(--t-fast) ease,
+                  box-shadow var(--t-fast) ease;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--red-dark); transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(164,20,20,.32);
+    }
+    .btn-primary:active:not(:disabled) { transform: translateY(0); }
+    .btn-primary:disabled { opacity: .65; cursor: not-allowed; }
+
+    .btn-secondary {
+      height: 42px; padding: 0 20px;
+      background: var(--gray-5); color: var(--ink-3);
+      border: 1.5px solid var(--gray-4); border-radius: var(--r-sm);
+      font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      text-decoration: none;
+      transition: background var(--t-fast) ease, border-color var(--t-fast) ease,
+                  transform var(--t-fast) ease, box-shadow var(--t-fast) ease;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--gray-4); border-color: var(--gray-3);
+      transform: translateY(-1px); box-shadow: var(--shadow-sm);
+    }
+    .btn-secondary:disabled { opacity: .65; cursor: not-allowed; }
+
+    .btn-full { width: 100%; margin-top: 20px; height: 48px; font-size: 15px; }
+
+    /* Spinner */
+    .spinner {
+      width: 16px; height: 16px; flex-shrink: 0;
+      border: 2px solid rgba(255,255,255,.35);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+    .spinner-dark {
+      border-color: rgba(0,0,0,.15);
+      border-top-color: var(--ink-3);
+    }
+    .btn-primary.loading .spinner,
+    .btn-secondary.loading .spinner { display: block; }
+    .btn-primary.loading .btn-label,
+    .btn-secondary.loading .btn-label { opacity: .75; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Extension card ── */
+    .ext-card-body {
+      display: flex; align-items: center; gap: 20px;
+      flex-wrap: wrap;
+    }
+    .ext-icon {
+      width: 56px; height: 56px; border-radius: 14px;
+      background: var(--red-bg);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--red); flex-shrink: 0;
+    }
+    .ext-icon svg { width: 28px; height: 28px; }
+    .ext-text { flex: 1; min-width: 200px; }
+    .ext-text h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .ext-text p  { font-size: 13px; color: var(--gray-1); line-height: 1.5; }
+
+    /* ── Error banner ── */
+    .api-error {
+      display: none;
+      background: #fef2f2; border: 1.5px solid #fecaca;
+      color: #7f1d1d; border-radius: var(--r-sm);
+      padding: 12px 16px; font-size: 13px; line-height: 1.5;
+      margin-top: 12px;
+    }
+    .api-error.visible { display: block; }
+
+    /* ── Footer ── */
+    .footer {
+      background: var(--ink-2); color: rgba(255,255,255,.5);
+      padding: 40px 0 32px;
+      margin-top: 48px;
+    }
+    .footer-inner {
+      max-width: 1100px; margin: 0 auto; padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+    }
+    .footer-brand { font-size: 14px; font-weight: 600; color: white; }
+    .footer-copy { font-size: 13px; }
+
+    /* ── Reveal animations ── */
+    .reveal {
+      opacity: 0; transform: translateY(22px);
+      transition: opacity var(--t-slow) var(--ease-out),
+                  transform var(--t-slow) var(--ease-out);
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    .stagger > * {
+      opacity: 0; transform: translateY(18px);
+      transition: opacity 480ms var(--ease-out), transform 480ms var(--ease-out);
+    }
+    .stagger.visible > *:nth-child(1) { opacity:1; transform:none; transition-delay:  0ms; }
+    .stagger.visible > *:nth-child(2) { opacity:1; transform:none; transition-delay: 70ms; }
+    .stagger.visible > *:nth-child(3) { opacity:1; transform:none; transition-delay:140ms; }
+    .stagger.visible > *:nth-child(4) { opacity:1; transform:none; transition-delay:210ms; }
+
+    .page-enter { animation: pageUp 600ms var(--ease-out) both; }
+    .page-enter-2 { animation: pageUp 600ms var(--ease-out) 80ms both; }
+    @keyframes pageUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration:.01ms!important; transition-duration:.01ms!important; }
+      .reveal, .stagger > * { opacity:1; transform:none; }
+      html { scroll-behavior: auto; }
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .nav-email { display: none; }
+      .page-title { font-size: 22px; }
+      .card-body, .card-head { padding-left: 20px; padding-right: 20px; }
+      .account-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAV ── -->
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a class="nav-brand" href="index.html">
+        <div class="nav-logo-slot" aria-hidden="true">PB</div>
+        <span class="nav-wordmark">PostBot</span>
+      </a>
+      <div class="nav-right">
+        <span class="nav-email" id="navEmail"></span>
+        <button class="btn-logout" id="logoutBtn">Log out</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── PAGE ── -->
+  <main class="page">
+    <div class="content">
+
+      <h1 class="page-title page-enter">My Account</h1>
+      <p class="page-sub page-enter-2">Manage your PostBot subscription and access the Chrome extension.</p>
+
+      <div class="stagger" id="cardStack">
+
+        <!-- ── Account Overview ── -->
+        <div class="card" id="accountCard">
+          <div class="card-head">
+            <div class="card-head-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Account overview</div>
+              <div class="card-subtitle" id="memberSince">PostBot member</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="account-row">
+              <div>
+                <div class="row-label">Email</div>
+                <div class="row-value" id="displayEmail">—</div>
+              </div>
+            </div>
+            <div class="account-row">
+              <div>
+                <div class="row-label">Current plan</div>
+                <div id="planDisplay" style="margin-top:4px"></div>
+              </div>
+              <div id="subscribeWrap" style="display:none">
+                <button class="btn-primary" id="subscribeBtn">
+                  <div class="spinner" aria-hidden="true"></div>
+                  <span class="btn-label">Subscribe now</span>
+                </button>
+              </div>
+            </div>
+            <div class="api-error" id="checkoutError"></div>
+          </div>
+        </div>
+
+        <!-- ── Manage Subscription (paid only) ── -->
+        <div class="card" id="manageCard" style="display:none">
+          <div class="card-head">
+            <div class="card-head-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <rect x="1" y="4" width="22" height="16" rx="2"/>
+                <path d="M1 10h22"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Subscription</div>
+              <div class="card-subtitle">Update payment method, view invoices, or cancel</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <p style="font-size:14px;color:var(--gray-1);margin-bottom:4px;line-height:1.6">
+              Manage your billing details through the Stripe Customer Portal.
+              Cancel anytime — access continues until the end of your billing period.
+            </p>
+            <div class="api-error" id="portalError"></div>
+            <button class="btn-secondary btn-full" id="manageBtn">
+              <div class="spinner spinner-dark" aria-hidden="true"></div>
+              <span class="btn-label">Manage Subscription →</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Get the Extension ── -->
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <path d="M8 21h8M12 17v4"/>
+              </svg>
+            </div>
+            <div>
+              <div class="card-title">Chrome Extension</div>
+              <div class="card-subtitle">Available on the Chrome Web Store</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="ext-card-body">
+              <div class="ext-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                </svg>
+              </div>
+              <div class="ext-text">
+                <h3>You're all set — start listing vehicles</h3>
+                <p>Install the PostBot Chrome extension, open any vehicle on your dealer website, and PostBot fills the Facebook Marketplace form automatically.</p>
+              </div>
+            </div>
+            <a class="btn-primary btn-full" href="#" id="extensionBtn"
+               style="margin-top:24px;text-decoration:none">
+              <!-- EXTENSION LINK SLOT — replace href="#" with Chrome Web Store URL when published -->
+              Download Extension
+            </a>
+            <p style="font-size:12px;color:var(--gray-2);text-align:center;margin-top:10px">
+              Chrome Web Store link coming soon
+            </p>
+          </div>
+        </div>
+
+      </div><!-- /cardStack -->
+    </div><!-- /content -->
+  </main>
+
+  <!-- ── FOOTER ── -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-brand">PostBot by Dylan's Auto Sales</span>
+      <span class="footer-copy">&copy; 2026 Dylan's Auto Sales. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script>
+    const API = 'https://dylansautosales-facebook-tool.onrender.com';
+
+    // ── JWT decode (no library — just base64) ──
+    function decodeJWT(token) {
+      try {
+        const payload = token.split('.')[1];
+        // Pad base64 to multiple of 4
+        const padded = payload + '==='.slice((payload.length + 3) % 4);
+        return JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
+      } catch {
+        return null;
+      }
+    }
+
+    // ── Auth guard — redirect to login if no token ──
+    const token = localStorage.getItem('postbot_token');
+    if (!token) {
+      window.location.replace('login.html');
+      throw new Error('No token'); // stop script execution
+    }
+
+    const claims = decodeJWT(token);
+    if (!claims) {
+      localStorage.clear();
+      window.location.replace('login.html');
+      throw new Error('Bad token');
+    }
+
+    const { email, tier } = claims;
+
+    // ── Populate nav ──
+    document.getElementById('navEmail').textContent = email;
+
+    // ── Frosted nav on scroll ──
+    const nav = document.getElementById('nav');
+    window.addEventListener('scroll', () => {
+      nav.classList.toggle('scrolled', window.scrollY > 20);
+    }, { passive: true });
+
+    // ── Logout ──
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      localStorage.removeItem('postbot_token');
+      localStorage.removeItem('postbot_email');
+      window.location.href = 'login.html';
+    });
+
+    // ── Populate account card ──
+    document.getElementById('displayEmail').textContent = email;
+
+    // Member since (JWT iat if present, else placeholder)
+    if (claims.iat) {
+      const d = new Date(claims.iat * 1000);
+      document.getElementById('memberSince').textContent =
+        'Member since ' + d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+
+    // ── Plan display ──
+    const planDisplay    = document.getElementById('planDisplay');
+    const subscribeWrap  = document.getElementById('subscribeWrap');
+    const manageCard     = document.getElementById('manageCard');
+
+    if (tier === 'standard') {
+      planDisplay.innerHTML =
+        `<span class="plan-badge paid">
+           <span class="plan-badge-dot" aria-hidden="true"></span>
+           Standard Plan &mdash; Active
+         </span>`;
+      manageCard.style.display = '';
+    } else {
+      planDisplay.innerHTML =
+        `<span class="plan-badge free">
+           <span class="plan-badge-dot" aria-hidden="true"></span>
+           Free &mdash; No active subscription
+         </span>`;
+      subscribeWrap.style.display = '';
+    }
+
+    // ── Subscribe: POST /billing/create-checkout → redirect ──
+    const subscribeBtn   = document.getElementById('subscribeBtn');
+    const checkoutError  = document.getElementById('checkoutError');
+
+    subscribeBtn.addEventListener('click', async () => {
+      subscribeBtn.disabled = true;
+      subscribeBtn.classList.add('loading');
+      checkoutError.classList.remove('visible');
+
+      try {
+        const resp = await fetch(`${API}/billing/create-checkout`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.checkout_url) {
+          window.location.href = data.checkout_url;
+        } else {
+          checkoutError.textContent = data.detail || `Error ${resp.status} — please try again.`;
+          checkoutError.classList.add('visible');
+          subscribeBtn.disabled = false;
+          subscribeBtn.classList.remove('loading');
+        }
+      } catch {
+        checkoutError.textContent = 'Could not reach the server. Please try again.';
+        checkoutError.classList.add('visible');
+        subscribeBtn.disabled = false;
+        subscribeBtn.classList.remove('loading');
+      }
+    });
+
+    // ── Manage: POST /billing/portal → redirect ──
+    const manageBtn  = document.getElementById('manageBtn');
+    const portalError = document.getElementById('portalError');
+
+    manageBtn.addEventListener('click', async () => {
+      manageBtn.disabled = true;
+      manageBtn.classList.add('loading');
+      portalError.classList.remove('visible');
+
+      try {
+        const resp = await fetch(`${API}/billing/portal`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok && data.portal_url) {
+          window.location.href = data.portal_url;
+        } else {
+          portalError.textContent = data.detail || `Error ${resp.status} — please try again.`;
+          portalError.classList.add('visible');
+          manageBtn.disabled = false;
+          manageBtn.classList.remove('loading');
+        }
+      } catch {
+        portalError.textContent = 'Could not reach the server. Please try again.';
+        portalError.classList.add('visible');
+        manageBtn.disabled = false;
+        manageBtn.classList.remove('loading');
+      }
+    });
+
+    // ── Scroll reveal ──
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('visible');
+          observer.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.reveal, .stagger').forEach(el => observer.observe(el));
+
+    // Kick off stagger immediately (above fold)
+    setTimeout(() => {
+      document.getElementById('cardStack').classList.add('visible');
+    }, 120);
+  </script>
+
+</body>
+</html>
