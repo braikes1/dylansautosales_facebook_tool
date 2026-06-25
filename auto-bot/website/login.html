@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log in — PostBot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red:        #A41414;
+      --red-dark:   #7e0f0f;
+      --red-bg:     #fff5f5;
+      --ink:        #0f0f10;
+      --ink-3:      #3a3a3c;
+      --gray-1:     #636366;
+      --gray-2:     #8e8e93;
+      --gray-3:     #c7c7cc;
+      --gray-4:     #e5e5ea;
+      --gray-5:     #f2f2f7;
+      --gray-6:     #f9f9fb;
+      --gray-7:     #374151;
+      --white:      #ffffff;
+      --shadow-lg:  0 16px 48px rgba(0,0,0,.10), 0 4px 12px rgba(0,0,0,.07);
+      --ease-out:   cubic-bezier(.16,1,.3,1);
+      --t-fast:     150ms;
+      --t-mid:      220ms;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background: var(--gray-6);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 100vh;
+      padding: 24px 16px;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(164,20,20,.06) 0%, transparent 70%),
+        var(--gray-6);
+      animation: pageIn 500ms var(--ease-out) both;
+    }
+
+    @keyframes pageIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      body { animation: none; }
+      *, *::before, *::after { transition-duration: .01ms !important; }
+    }
+
+    /* ── Back link ── */
+    .back-link {
+      position: fixed; top: 20px; left: 24px;
+      font-size: 14px; color: var(--gray-2);
+      text-decoration: none;
+      display: flex; align-items: center; gap: 6px;
+      transition: color var(--t-fast) ease;
+    }
+    .back-link:hover { color: var(--ink); }
+    .back-link svg { width: 16px; height: 16px; }
+
+    /* ── Card ── */
+    .card {
+      width: 100%; max-width: 440px;
+      background: var(--white);
+      border-radius: 20px;
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .card-header {
+      background: var(--red);
+      padding: 32px 36px 28px;
+      position: relative; overflow: hidden;
+    }
+    .card-header::before {
+      content: '';
+      position: absolute; top: -40px; right: -40px;
+      width: 160px; height: 160px; border-radius: 50%;
+      background: rgba(255,255,255,.05);
+    }
+    .card-header::after {
+      content: '';
+      position: absolute; bottom: -30px; left: 20px;
+      width: 100px; height: 100px; border-radius: 50%;
+      background: rgba(255,255,255,.04);
+    }
+
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 20px; position: relative; z-index: 1;
+    }
+    .brand-icon {
+      width: 36px; height: 36px;
+      background: rgba(255,255,255,.18);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 800; font-size: 13px;
+    }
+    .brand-name { font-size: 19px; font-weight: 700; color: white; letter-spacing: -.3px; }
+    .brand-sub  { font-size: 11px; color: rgba(255,255,255,.6); letter-spacing: .5px; text-transform: uppercase; }
+
+    .header-headline {
+      font-size: 17px; font-weight: 500;
+      color: rgba(255,255,255,.92); line-height: 1.4;
+      position: relative; z-index: 1;
+    }
+
+    /* ── Body ── */
+    .card-body { padding: 32px 36px 36px; }
+
+    .form-group { margin-bottom: 20px; }
+
+    label {
+      display: block; font-size: 13px; font-weight: 600;
+      color: var(--gray-7); margin-bottom: 6px; letter-spacing: .1px;
+    }
+
+    .input-wrap { position: relative; }
+
+    .input-icon {
+      position: absolute; left: 13px; top: 50%;
+      transform: translateY(-50%);
+      width: 16px; height: 16px; color: var(--gray-3); pointer-events: none;
+    }
+
+    input[type="email"],
+    input[type="password"],
+    input[type="text"] {
+      width: 100%; height: 46px;
+      padding: 0 14px 0 40px;
+      border: 1.5px solid var(--gray-4);
+      border-radius: 9px;
+      font-size: 15px; color: var(--ink);
+      background: var(--white); outline: none;
+      transition: border-color var(--t-fast) ease, box-shadow var(--t-fast) ease;
+    }
+    input:focus {
+      border-color: var(--red);
+      box-shadow: 0 0 0 3px rgba(164,20,20,.11);
+    }
+    input::placeholder { color: var(--gray-3); }
+
+    .pw-toggle {
+      position: absolute; right: 12px; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none; cursor: pointer;
+      color: var(--gray-3); padding: 2px; line-height: 0;
+      transition: color var(--t-fast) ease;
+    }
+    .pw-toggle:hover { color: var(--gray-2); }
+    .pw-toggle svg { width: 17px; height: 17px; }
+
+    /* ── Button ── */
+    .btn-submit {
+      width: 100%; height: 48px; margin-top: 8px;
+      background: var(--red); color: white;
+      font-size: 15px; font-weight: 600;
+      border: none; border-radius: 9px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background var(--t-fast) ease, transform var(--t-fast) ease,
+                  box-shadow var(--t-fast) ease;
+      box-shadow: 0 2px 6px rgba(164,20,20,.28);
+    }
+    .btn-submit:hover:not(:disabled) {
+      background: var(--red-dark);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(164,20,20,.34);
+    }
+    .btn-submit:active:not(:disabled) { transform: translateY(0); }
+    .btn-submit:disabled { opacity: .72; cursor: not-allowed; }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2.5px solid rgba(255,255,255,.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none; flex-shrink: 0;
+    }
+    .btn-submit.loading .spinner { display: block; }
+    .btn-submit.loading .btn-label { opacity: .85; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Status ── */
+    .status {
+      margin-top: 18px; padding: 13px 15px;
+      border-radius: 9px; font-size: 14px; line-height: 1.5;
+      display: none; align-items: flex-start; gap: 10px;
+    }
+    .status.visible { display: flex; }
+    .status-icon { flex-shrink: 0; margin-top: 1px; }
+    .status-icon svg { width: 17px; height: 17px; }
+    .status.success { background: #f0fdf4; border: 1.5px solid #bbf7d0; color: #14532d; }
+    .status.error   { background: #fef2f2; border: 1.5px solid #fecaca; color: #7f1d1d; }
+    .status-title   { font-weight: 600; font-size: 14px; }
+    .status-body    { font-size: 13px; margin-top: 2px; opacity: .85; }
+
+    /* ── Footer ── */
+    .card-footer {
+      padding: 16px 36px 24px;
+      border-top: 1px solid var(--gray-5);
+      text-align: center; font-size: 13px; color: var(--gray-2);
+    }
+    .card-footer a { color: var(--red); text-decoration: none; font-weight: 500; }
+    .card-footer a:hover { text-decoration: underline; }
+
+    .page-footer { margin-top: 28px; font-size: 12px; color: var(--gray-3); text-align: center; }
+
+    @media (max-width: 480px) {
+      .card-header, .card-body, .card-footer { padding-left: 24px; padding-right: 24px; }
+      .back-link { position: static; margin-bottom: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <a class="back-link" href="index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    Back to PostBot
+  </a>
+
+  <div class="card" role="main">
+
+    <div class="card-header">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">PB</div>
+        <div>
+          <div class="brand-name">PostBot</div>
+          <div class="brand-sub">Dylan's Auto Sales</div>
+        </div>
+      </div>
+      <p class="header-headline">Welcome back. Sign in to your account.</p>
+    </div>
+
+    <div class="card-body">
+      <form id="loginForm" novalidate>
+
+        <div class="form-group">
+          <label for="email">Email address</label>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+            </svg>
+            <input type="email" id="email" name="email" placeholder="you@dealership.com" autocomplete="email" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="input-wrap">
+            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <input type="password" id="password" name="password" placeholder="Your password" autocomplete="current-password" required />
+            <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password">
+              <svg id="eyeShow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+              <svg id="eyeHide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+                <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+                <line x1="2" y1="2" x2="22" y2="22"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-submit" id="submitBtn">
+          <div class="spinner" aria-hidden="true"></div>
+          <span class="btn-label">Sign in</span>
+        </button>
+
+        <div class="status" id="statusMsg" role="alert" aria-live="polite">
+          <div class="status-icon" id="statusIcon"></div>
+          <div>
+            <div class="status-title" id="statusTitle"></div>
+            <div class="status-body"  id="statusBody"></div>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="card-footer">
+      Don't have an account? <a href="signup.html">Create one</a>
+    </div>
+
+  </div>
+
+  <div class="page-footer">&copy; 2026 Dylan's Auto Sales &nbsp;·&nbsp; PostBot</div>
+
+  <script>
+    const API = 'https://dylansautosales-facebook-tool.onrender.com';
+
+    const form    = document.getElementById('loginForm');
+    const emailEl = document.getElementById('email');
+    const pwEl    = document.getElementById('password');
+    const btn     = document.getElementById('submitBtn');
+    const statusMsg   = document.getElementById('statusMsg');
+    const statusTitle = document.getElementById('statusTitle');
+    const statusBody  = document.getElementById('statusBody');
+    const statusIcon  = document.getElementById('statusIcon');
+
+    // Password toggle
+    const pwToggle = document.getElementById('pwToggle');
+    document.getElementById('pwToggle').addEventListener('click', () => {
+      const hidden = pwEl.type === 'password';
+      pwEl.type = hidden ? 'text' : 'password';
+      document.getElementById('eyeShow').style.display = hidden ? 'none' : '';
+      document.getElementById('eyeHide').style.display = hidden ? '' : 'none';
+      pwToggle.setAttribute('aria-label', hidden ? 'Hide password' : 'Show password');
+    });
+
+    function showStatus(type, title, body) {
+      statusMsg.className = `status ${type} visible`;
+      statusTitle.textContent = title;
+      statusBody.textContent  = body;
+      statusIcon.innerHTML = type === 'success'
+        ? `<svg viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
+        : `<svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+    }
+
+    function setLoading(on) {
+      btn.disabled = on;
+      btn.classList.toggle('loading', on);
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      statusMsg.className = 'status';
+
+      const email    = emailEl.value.trim();
+      const password = pwEl.value;
+
+      if (!email || !email.includes('@')) {
+        showStatus('error', 'Invalid email', 'Please enter a valid email address.');
+        emailEl.focus(); return;
+      }
+      if (!password) {
+        showStatus('error', 'Password required', 'Please enter your password.');
+        pwEl.focus(); return;
+      }
+
+      setLoading(true);
+      try {
+        const resp = await fetch(`${API}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        let data;
+        try { data = await resp.json(); } catch { data = {}; }
+
+        if (resp.ok && data.token) {
+          localStorage.setItem('postbot_token', data.token);
+          localStorage.setItem('postbot_email', email);
+          showStatus('success', 'Signed in!', `Welcome back, ${email}. Redirecting…`);
+          btn.style.display = 'none';
+          // Redirect to account page (placeholder)
+          setTimeout(() => { window.location.href = 'account.html'; }, 1200);
+        } else {
+          const msg = data.detail || `Server returned ${resp.status}.`;
+          showStatus('error', 'Sign-in failed', msg);
+        }
+      } catch {
+        showStatus('error', 'Could not reach PostBot',
+          'The server may be waking up (~20s). Please try again in a moment.');
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
+
+</body>
+</html>

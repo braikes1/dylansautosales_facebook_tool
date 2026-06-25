@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: postbot-website
+    runtime: static
+    staticPublishPath: website
+    buildCommand: ""
+    pullRequestPreviewsEnabled: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
