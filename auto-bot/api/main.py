@@ -1,5 +1,5 @@
 # api/main.py
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +12,7 @@ from typing import List, Optional
 import bcrypt
 import jwt as pyjwt
 from supabase import create_client, Client
+import stripe
 
 app = FastAPI()
 
@@ -22,6 +23,14 @@ _SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 _JWT_SECRET = os.environ.get("JWT_SECRET", "")
 
 supabase: Client = create_client(_SUPABASE_URL, _SUPABASE_SERVICE_KEY) if _SUPABASE_URL and _SUPABASE_SERVICE_KEY else None  # type: ignore
+
+# ========= Stripe client =========
+_STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
+_STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+_STRIPE_PRICE_STANDARD = os.environ.get("STRIPE_PRICE_STANDARD", "price_1TlzXPRvbsBXVbcqerMgexrZ")
+_WEBSITE_BASE          = "https://postbot-website.onrender.com"
+
+stripe.api_key = _STRIPE_SECRET_KEY
 
 
 @app.get("/health")
@@ -287,4 +296,117 @@ def auth_verify(authorization: Optional[str] = Header(default=None)):
         raise HTTPException(status_code=401, detail="Invalid or expired token.")
 
     return {"email": payload.get("email"), "tier": payload.get("tier")}
+
+
+# =========================================================================
+# BILLING ENDPOINTS
+# =========================================================================
+
+def _require_jwt(authorization: Optional[str]) -> dict:
+    """Decode and validate a Bearer JWT. Returns payload dict or raises 401."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or malformed Authorization header.")
+    token = authorization.split(" ", 1)[1]
+    try:
+        return pyjwt.decode(token, _JWT_SECRET, algorithms=["HS256"])
+    except pyjwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
+
+
+@app.post("/billing/create-checkout")
+def billing_create_checkout(authorization: Optional[str] = Header(default=None)):
+    """
+    Create a Stripe Checkout Session (subscription mode) for the Standard plan.
+    - Requires valid JWT in Authorization: Bearer header
+    - Sets customer_email and client_reference_id to the user's email
+    - Returns { checkout_url }
+    """
+    payload = _require_jwt(authorization)
+    email = payload.get("email")
+
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        payment_method_types=["card"],
+        line_items=[{"price": _STRIPE_PRICE_STANDARD, "quantity": 1}],
+        customer_email=email,
+        client_reference_id=email,
+        success_url=f"{_WEBSITE_BASE}/account.html?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{_WEBSITE_BASE}/index.html#pricing",
+    )
+    return {"checkout_url": session.url}
+
+
+@app.post("/billing/webhook")
+async def billing_webhook(request: Request,
+                          stripe_signature: Optional[str] = Header(default=None)):
+    """
+    Stripe webhook receiver.
+    - Verifies Stripe signature using STRIPE_WEBHOOK_SECRET
+    - checkout.session.completed → set user tier='standard', store stripe_customer_id
+    - customer.subscription.deleted → find user by stripe_customer_id, set tier='free'
+    - Always returns 200 to prevent Stripe retry storms
+    """
+    body = await request.body()
+
+    try:
+        event = stripe.Webhook.construct_event(
+            body, stripe_signature, _STRIPE_WEBHOOK_SECRET
+        )
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
+
+    event_type = event.get("type", "")
+    obj = event["data"]["object"]
+
+    if event_type == "checkout.session.completed":
+        email = obj.get("client_reference_id")
+        customer_id = obj.get("customer")
+        if email:
+            supabase.table("users").update({
+                "tier": "standard",
+                "stripe_customer_id": customer_id,
+            }).eq("email", email).execute()
+            print(f"[billing] checkout.session.completed: {email} → tier=standard, customer={customer_id}", flush=True)
+
+    elif event_type == "customer.subscription.deleted":
+        customer_id = obj.get("customer")
+        if customer_id:
+            result = supabase.table("users").select("email").eq(
+                "stripe_customer_id", customer_id
+            ).execute()
+            if result.data:
+                email = result.data[0]["email"]
+                supabase.table("users").update({"tier": "free"}).eq(
+                    "email", email
+                ).execute()
+                print(f"[billing] subscription.deleted: {email} → tier=free", flush=True)
+
+    return {"received": True}
+
+
+@app.post("/billing/portal")
+def billing_portal(authorization: Optional[str] = Header(default=None)):
+    """
+    Create a Stripe Customer Portal session so users can manage/cancel.
+    - Requires valid JWT
+    - Looks up the user's stripe_customer_id in Supabase
+    - Returns { portal_url }
+    """
+    payload = _require_jwt(authorization)
+    email = payload.get("email")
+
+    result = supabase.table("users").select("stripe_customer_id").eq("email", email).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    customer_id = result.data[0].get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="No active subscription found for this account.")
+
+    portal_session = stripe.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=f"{_WEBSITE_BASE}/account.html",
+    )
+    return {"portal_url": portal_session.url}
+
 
