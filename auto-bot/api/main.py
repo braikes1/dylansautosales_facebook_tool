@@ -355,21 +355,21 @@ async def billing_webhook(request: Request,
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
 
-    event_type = event.get("type", "")
+    event_type = event["type"]
     obj = event["data"]["object"]
 
     if event_type == "checkout.session.completed":
-        email = obj.get("client_reference_id")
-        customer_id = obj.get("customer")
+        email = obj["client_reference_id"]
+        customer_id = obj["customer"]
         if email:
             supabase.table("users").update({
                 "tier": "standard",
                 "stripe_customer_id": customer_id,
             }).eq("email", email).execute()
-            print(f"[billing] checkout.session.completed: {email} → tier=standard, customer={customer_id}", flush=True)
+            print(f"[billing] checkout.session.completed: {email} tier=standard, customer={customer_id}", flush=True)
 
     elif event_type == "customer.subscription.deleted":
-        customer_id = obj.get("customer")
+        customer_id = obj["customer"]
         if customer_id:
             result = supabase.table("users").select("email").eq(
                 "stripe_customer_id", customer_id
