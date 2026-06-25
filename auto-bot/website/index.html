@@ -111,6 +111,33 @@
 
     .nav-actions { display: flex; align-items: center; gap: 10px; }
 
+    /* Logged-in nav state */
+    .nav-user {
+      display: none; /* shown by JS when token exists */
+      align-items: center; gap: 10px;
+    }
+    .nav-user-email {
+      font-size: 13px; color: var(--gray-1);
+      max-width: 180px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .nav-user-account {
+      height: 38px; padding: 0 16px;
+      background: var(--gray-5); color: var(--ink-3);
+      border: 1.5px solid var(--gray-4); border-radius: var(--r-sm);
+      font-size: 14px; font-weight: 500;
+      text-decoration: none;
+      display: inline-flex; align-items: center;
+      transition: background var(--t-fast) ease, border-color var(--t-fast) ease;
+    }
+    .nav-user-account:hover { background: var(--gray-4); border-color: var(--gray-3); }
+    .nav-user-logout {
+      font-size: 13px; color: var(--gray-2);
+      background: none; border: none; cursor: pointer; padding: 4px 2px;
+      transition: color var(--t-fast) ease;
+    }
+    .nav-user-logout:hover { color: var(--ink); }
+
     .btn-ghost {
       height: 38px; padding: 0 16px;
       border: none; border-radius: var(--r-sm);
@@ -654,9 +681,14 @@
         <div class="nav-logo-slot" aria-hidden="true">PB</div>
         <span class="nav-wordmark">PostBot</span>
       </a>
-      <div class="nav-actions">
+      <div class="nav-actions" id="navActions">
         <a class="btn-ghost" href="login.html">Log in</a>
         <a class="btn-primary" href="signup.html">Create account</a>
+      </div>
+      <div class="nav-user" id="navUser">
+        <span class="nav-user-email" id="navUserEmail"></span>
+        <a class="nav-user-account" href="account.html">My Account</a>
+        <button class="nav-user-logout" id="navLogout">Log out</button>
       </div>
     </div>
   </nav>
@@ -1003,6 +1035,33 @@
   </footer>
 
   <script>
+    // ── Auth state: swap nav if logged in ──
+    (function () {
+      const token = localStorage.getItem('postbot_token');
+      if (!token) return; // not logged in — leave default buttons
+
+      try {
+        const seg = token.split('.')[1];
+        const padded = seg + '==='.slice((seg.length + 3) % 4);
+        const claims = JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
+        const email = claims.email || '';
+
+        // Hide guest buttons, show user nav
+        document.getElementById('navActions').style.display = 'none';
+        const navUser = document.getElementById('navUser');
+        navUser.style.display = 'flex';
+        document.getElementById('navUserEmail').textContent = email;
+
+        document.getElementById('navLogout').addEventListener('click', () => {
+          localStorage.removeItem('postbot_token');
+          localStorage.removeItem('postbot_email');
+          window.location.reload();
+        });
+      } catch {
+        // Malformed token — leave default state
+      }
+    })();
+
     // ── Frosted nav on scroll ──
     const nav = document.getElementById('nav');
     window.addEventListener('scroll', () => {
