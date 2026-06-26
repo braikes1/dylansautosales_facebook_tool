@@ -111,7 +111,7 @@ async function fetchDetailDataViaApi(detailUrl) {
   } catch (e) {
     console.error("[sw] Health check failed:", e.message);
     throw new Error(
-      "Cannot reach the AutoBot server. Make sure the AutoBot launcher is open and showing the green dot."
+      "Cannot reach the MarketFill server. Make sure the MarketFill service is running and try again."
     );
   }
 
