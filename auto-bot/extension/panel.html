@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>AutoBot</title>
+    <title>MarketFill</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -17,14 +17,70 @@
             <span class="logo-dot"></span>
           </div>
           <div class="brand-text-group">
-            <span class="brand-name">AutoBot</span>
+            <span class="brand-name">MarketFill</span>
             <span class="brand-sub">Dylan's Auto Sales</span>
           </div>
         </div>
-        <button id="scrapeBtn" class="primary">Scrape this page</button>
+        <!-- Right side: scrape button (shown when authed) or logout link -->
+        <div id="topbar-right">
+          <button id="scrapeBtn" class="primary" hidden>Scrape this page</button>
+          <button id="logoutBtn" class="link-btn auth-logout" hidden>Log out</button>
+        </div>
       </header>
 
-      <main>
+      <!-- ── AUTH: LOGIN SCREEN ── -->
+      <section id="view-login" class="view auth-view active">
+        <div class="auth-card">
+          <div class="auth-icon">🔒</div>
+          <h2 class="auth-title">Sign in to MarketFill</h2>
+          <p class="auth-sub">Your account is required to use the extension.</p>
+          <div id="loginError" class="auth-error" hidden></div>
+          <label class="field full">
+            <span>Email</span>
+            <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="email" />
+          </label>
+          <label class="field full">
+            <span>Password</span>
+            <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
+          </label>
+          <button id="loginBtn" class="primary wide auth-btn">
+            <span class="btn-label">Log in</span>
+            <span class="btn-spinner spinner" hidden></span>
+          </button>
+          <p class="auth-footer">
+            Need an account?
+            <a href="https://postbot-website.onrender.com" target="_blank" rel="noopener">Subscribe at dylansautosales.com</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- ── AUTH: NO SUBSCRIPTION SCREEN ── -->
+      <section id="view-no-sub" class="view auth-view">
+        <div class="auth-card">
+          <div class="auth-icon">🚫</div>
+          <h2 class="auth-title">No active subscription</h2>
+          <p class="auth-sub">MarketFill requires an active Standard plan. Subscribe to get started.</p>
+          <a class="primary wide auth-btn auth-link-btn"
+             href="https://postbot-website.onrender.com/#pricing"
+             target="_blank" rel="noopener">
+            Subscribe now →
+          </a>
+          <p class="auth-footer" style="margin-top:12px">
+            Already subscribed?
+            <button id="noSubLogoutBtn" class="link-btn" style="font-size:11px">Log out and try again</button>
+          </p>
+        </div>
+      </section>
+
+      <!-- ── AUTH: VERIFY LOADING ── -->
+      <section id="view-auth-loading" class="view auth-view">
+        <div class="auth-card auth-loading-card">
+          <div class="spinner"></div>
+          <p class="auth-sub" style="margin-top:12px">Checking your account…</p>
+        </div>
+      </section>
+
+      <main id="scraper-main" hidden>
         <!-- RESULTS LIST -->
         <section id="view-list" class="view active">
           <div id="listEmpty" class="empty-state">

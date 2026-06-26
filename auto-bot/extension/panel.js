@@ -3,13 +3,131 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 
+const API = 'https://dylansautosales-facebook-tool.onrender.com';
+
 let state = {
   results: [],
   detail: null,
   activeView: "list",
 };
 
-init();
+// ── AUTH GATE — runs before init() ────────────────────────────────────────────
+
+function showAuthView(id) {
+  // Hide all auth views and scraper main
+  $$('.auth-view').forEach(v => v.classList.remove('active'));
+  document.getElementById('scraper-main').hidden = true;
+  document.getElementById('scrapeBtn').hidden = true;
+  document.getElementById('logoutBtn').hidden = true;
+  // Show requested auth view
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function showScraper() {
+  $$('.auth-view').forEach(v => v.classList.remove('active'));
+  document.getElementById('scraper-main').hidden = false;
+  document.getElementById('scrapeBtn').hidden = false;
+  document.getElementById('logoutBtn').hidden = false;
+}
+
+async function verifyAndRoute(token) {
+  showAuthView('view-auth-loading');
+  try {
+    const resp = await fetch(`${API}/auth/verify`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (resp.status === 401) {
+      // Token invalid/expired — clear and show login
+      await chrome.storage.local.remove('mf_token');
+      showAuthView('view-login');
+      return;
+    }
+    if (!resp.ok) throw new Error(`verify ${resp.status}`);
+    const { tier } = await resp.json();
+    if (tier === 'standard') {
+      showScraper();
+      init(); // ← only entry point into the scraping UI
+    } else {
+      showAuthView('view-no-sub');
+    }
+  } catch {
+    // Network error — re-show login with a message
+    showAuthView('view-login');
+    const err = document.getElementById('loginError');
+    err.textContent = 'Could not reach the server. Check your connection and try again.';
+    err.hidden = false;
+  }
+}
+
+async function handleLogin() {
+  const email    = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const btn      = document.getElementById('loginBtn');
+  const label    = btn.querySelector('.btn-label');
+  const spinner  = btn.querySelector('.btn-spinner');
+  const errEl    = document.getElementById('loginError');
+
+  if (!email || !password) {
+    errEl.textContent = 'Please enter your email and password.';
+    errEl.hidden = false;
+    return;
+  }
+
+  btn.disabled = true;
+  label.textContent = 'Signing in…';
+  spinner.hidden = false;
+  errEl.hidden = true;
+
+  try {
+    const resp = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.token) {
+      await chrome.storage.local.set({ mf_token: data.token });
+      await verifyAndRoute(data.token);
+    } else {
+      errEl.textContent = data.detail || 'Invalid email or password.';
+      errEl.hidden = false;
+    }
+  } catch {
+    errEl.textContent = 'Could not reach the server. The service may be starting up — please try again in 20 seconds.';
+    errEl.hidden = false;
+  } finally {
+    btn.disabled = false;
+    label.textContent = 'Log in';
+    spinner.hidden = true;
+  }
+}
+
+function handleLogout() {
+  chrome.storage.local.remove('mf_token');
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('loginError').hidden = true;
+  showAuthView('view-login');
+}
+
+// Wire up auth UI
+document.getElementById('loginBtn').addEventListener('click', handleLogin);
+document.getElementById('loginEmail').addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
+document.getElementById('loginPassword').addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
+document.getElementById('logoutBtn').addEventListener('click', handleLogout);
+document.getElementById('noSubLogoutBtn').addEventListener('click', handleLogout);
+
+// Boot: check for saved token
+chrome.storage.local.get('mf_token', ({ mf_token }) => {
+  if (mf_token) {
+    verifyAndRoute(mf_token);
+  } else {
+    showAuthView('view-login');
+  }
+});
+
+// ── END AUTH GATE ─────────────────────────────────────────────────────────────
 
 function init() {
   $("#scrapeBtn").addEventListener("click", scrapeCurrentPage);
