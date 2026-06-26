@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Create Account — PostBot</title>
+  <title>Create Account — MarketFill</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -194,16 +194,16 @@
 
   <a class="back-link" href="index.html">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-    Back to PostBot
+    Back to MarketFill
   </a>
 
   <div class="card" role="main">
 
     <div class="card-header">
       <div class="brand">
-        <div class="brand-icon" aria-hidden="true">PB</div>
+        <img src="DAS_1.0.png" alt="Dylan's Auto Sales" style="height:48px;width:auto;border-radius:10px;">
         <div>
-          <div class="brand-name">PostBot</div>
+          <div class="brand-name">MarketFill</div>
           <div class="brand-sub">Dylan's Auto Sales</div>
         </div>
       </div>
@@ -269,7 +269,7 @@
 
   </div>
 
-  <div class="page-footer">&copy; 2026 Dylan's Auto Sales &nbsp;·&nbsp; PostBot</div>
+  <div class="page-footer">&copy; 2026 Dylan's Auto Sales &nbsp;·&nbsp; MarketFill</div>
 
   <script>
     const API = 'https://dylansautosales-facebook-tool.onrender.com';
@@ -336,7 +336,7 @@
           localStorage.setItem('postbot_token', data.token);
           localStorage.setItem('postbot_email', email);
           form.reset();
-          showStatus('success', 'Account created — welcome to PostBot.', `You're signed up as ${email}.`);
+          showStatus('success', 'Account created — welcome to MarketFill.', `You're signed up as ${email}.`);
           btn.style.display = 'none';
           setTimeout(() => { window.location.href = 'account.html'; }, 1600);
         } else {
@@ -344,7 +344,7 @@
           showStatus('error', 'Signup failed', msg);
         }
       } catch {
-        showStatus('error', 'Could not reach PostBot',
+        showStatus('error', 'Could not reach MarketFill',
           'The server may be waking up (~20s). Please try again in a moment.');
       } finally {
         setLoading(false);
