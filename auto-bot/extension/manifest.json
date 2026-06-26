@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MarketFill",
-  "description": "MarketFill pre-fills Facebook Marketplace vehicle listings from dealer inventory pages. Open a dealer's vehicle page, let MarketFill read the details and photos, review, and post in under a minute.",
+  "description": "Pre-fill Facebook Marketplace vehicle listings from dealer inventory. Review details and photos, then post in under a minute.",
   "version": "1.0.0",
   "icons": {
     "16": "icons/DAS_1.0_16x16.png",
