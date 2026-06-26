@@ -1,10 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Auto Bot",
-  "description": "Scrape dealer listings, review details, and fill Facebook Marketplace vehicle listings.",
+  "name": "MarketFill",
+  "description": "MarketFill pre-fills Facebook Marketplace vehicle listings from dealer inventory pages. Open a dealer's vehicle page, let MarketFill read the details and photos, review, and post in under a minute.",
   "version": "1.0.0",
+  "icons": {
+    "16": "icons/DAS_1.0_16x16.png",
+    "48": "icons/DAS_1.0_48x48.png",
+    "128": "icons/DAS_1.0_128x128.png"
+  },
   "action": {
-    "default_title": "Auto Bot"
+    "default_title": "MarketFill",
+    "default_icon": {
+      "16": "icons/DAS_1.0_16x16.png",
+      "48": "icons/DAS_1.0_48x48.png",
+      "128": "icons/DAS_1.0_128x128.png"
+    }
   },
   "side_panel": {
     "default_path": "panel.html"
