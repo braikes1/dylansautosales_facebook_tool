@@ -322,6 +322,7 @@ function openDetailFor(vehicle) {
 
 function sendToFacebookFromDetail() {
   if (!state.detail) return;
+  const fields = state.detail.fields || {};
   const listing = {
     title:         $("#field-title").value.trim(),
     year:          $("#field-year").value.trim(),
@@ -334,6 +335,8 @@ function sendToFacebookFromDetail() {
     exteriorColor: $("#field-extColor").value.trim(),
     interiorColor: $("#field-intColor").value.trim(),
     description:   $("#field-description").value.trim(),
+    condition:     fields.Condition     || "",
+    fuelType:      fields["Fuel Type"]  || "",
     images:        Array.from($("#photosGrid").querySelectorAll("img")).map((img) => img.src),
     sourceUrl:     state.detail.url || state.detail.base.detailUrl || "",
   };

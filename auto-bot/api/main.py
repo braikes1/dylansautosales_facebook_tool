@@ -7,6 +7,7 @@ from openai import OpenAI
 import os
 import re
 import json
+import requests
 from typing import List, Optional
 
 import bcrypt
@@ -213,6 +214,147 @@ def extract_html(body: HtmlPayload):
             ]
 
     result["images"] = images_out
+
+    return result
+
+
+class ScrapeUrlPayload(BaseModel):
+    url: str
+    vin: Optional[str] = None
+
+
+# FireCrawl key → result dict Title-Case key mapping
+_BODY_TYPE_SUFFIXES = re.compile(
+    r"\s+\b(Sedan|Hatchback|Coupe|Convertible|Wagon|SUV|Truck|Van|Minivan)\b.*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_body_type_suffix(model: str) -> str:
+    """Strip trailing body-type words from a FireCrawl model string.
+    E.g. 'Civic Sedan' -> 'Civic', 'HR-V SUV' -> 'HR-V'."""
+    return _BODY_TYPE_SUFFIXES.sub("", model).strip()
+
+
+_FC_KEY_MAP = {
+    "mileage":        "Mileage",
+    "vin":            "VIN",
+    "year":           "Year",
+    "make":           "Make",
+    "model":          "Model",
+    "price":          "Price",
+    "interior_color": "Interior Color",
+    "exterior_color": "Exterior Color",
+    "body_type":      "Body Type",
+    "description":    "Description",
+    "condition":      "Condition",
+    "fuel_type":      "Fuel Type",
+}
+
+_FC_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "vehicles": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "year":           {"type": "string"},
+                    "make":           {"type": "string"},
+                    "model":          {"type": "string"},
+                    "trim":           {"type": "string"},
+                    "price":          {"type": "string"},
+                    "mileage":        {"type": "string"},
+                    "vin":            {"type": "string"},
+                    "exterior_color": {"type": "string"},
+                    "interior_color": {"type": "string"},
+                    "description":    {"type": "string"},
+                    "images":         {"type": "array", "items": {"type": "string"}},
+                    "condition":      {"type": "string"},
+                    "body_type":      {"type": "string"},
+                    "fuel_type":      {"type": "string"},
+                },
+                "required": ["year", "make", "model", "price", "vin"],
+            },
+        }
+    },
+}
+
+
+@app.post("/fb/scrape_url")
+def scrape_url(body: ScrapeUrlPayload):
+    """
+    Scrape a single vehicle detail page URL via FireCrawl and return the same
+    result-dict shape as /fb/extract_html so the extension needs zero changes.
+    """
+    fc_api_key = os.environ["FIRECRAWL_API_KEY"]
+
+    fc_resp = requests.post(
+        "https://api.firecrawl.dev/v1/scrape",
+        headers={
+            "Authorization": f"Bearer {fc_api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "url": body.url,
+            "formats": ["markdown", "extract"],
+            "extract": {"schema": _FC_SCHEMA},
+        },
+        timeout=60,
+    )
+
+    if not fc_resp.ok:
+        raise HTTPException(
+            status_code=502,
+            detail=f"FireCrawl error {fc_resp.status_code}: {fc_resp.text[:400]}",
+        )
+
+    fc_data = fc_resp.json()
+
+    # Navigate to vehicles array — use bracket access per spec
+    try:
+        extract = fc_data["data"]["extract"]
+        vehicles = extract["vehicles"]
+    except (KeyError, TypeError) as e:
+        print(f"[scrape_url] FireCrawl response structure unexpected: {fc_data}", flush=True)
+        raise HTTPException(status_code=502, detail=f"FireCrawl extract missing: {e}")
+
+    if not vehicles:
+        raise HTTPException(status_code=404, detail="FireCrawl returned no vehicles for this URL.")
+
+    # Pick vehicle: match by VIN if provided, else take first
+    vehicle = None
+    if body.vin:
+        for v in vehicles:
+            if str(v.get("vin", "")).strip().upper() == body.vin.strip().upper():
+                vehicle = v
+                break
+    if vehicle is None:
+        vehicle = vehicles[0]
+
+    # Map FireCrawl lowercase keys → Title-Case result dict
+    result: dict = {}
+    for fc_key, out_key in _FC_KEY_MAP.items():
+        val = vehicle.get(fc_key) or ""
+        result[out_key] = str(val).strip() if val else ""
+
+    # Default Fuel Type to Gasoline if blank
+    if not result["Fuel Type"]:
+        result["Fuel Type"] = "Gasoline"
+
+    # Strip body-type suffix from Model (e.g. "Civic Sedan" -> "Civic")
+    if result.get("Model"):
+        result["Model"] = _strip_body_type_suffix(result["Model"])
+
+    # Images — full gallery from FireCrawl
+    raw_images = vehicle.get("images") or []
+    result["images"] = [u for u in raw_images if isinstance(u, str) and u.startswith("http")]
+
+    print(
+        f"[scrape_url] url={body.url} | vehicle={result.get('Year')} {result.get('Make')} {result.get('Model')} "
+        f"| images={len(result['images'])} | fields={list(result.keys())}",
+        flush=True,
+    )
 
     return result
 

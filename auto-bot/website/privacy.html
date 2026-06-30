@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — MarketFill by Dylan's Auto Sales</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red:      #A41414;
+      --red-dark: #7e0f0f;
+      --ink:      #0f0f10;
+      --ink-2:    #1c1c1e;
+      --ink-3:    #3a3a3c;
+      --gray-1:   #636366;
+      --gray-2:   #8e8e93;
+      --gray-3:   #c7c7cc;
+      --gray-4:   #e5e5ea;
+      --gray-5:   #f2f2f7;
+      --gray-6:   #f9f9fb;
+      --white:    #ffffff;
+
+      --nav-h:    64px;
+      --r-sm:     10px;
+      --r-md:     16px;
+
+      --shadow-sm: 0 2px 8px rgba(0,0,0,.07), 0 1px 3px rgba(0,0,0,.05);
+      --ease-out:  cubic-bezier(.16,1,.3,1);
+      --t-fast:    150ms;
+      --t-mid:     220ms;
+      --t-slow:    400ms;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                   Helvetica, Arial, sans-serif;
+      background: var(--gray-6);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    /* ── Nav ── */
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--nav-h);
+      display: flex; align-items: center;
+      transition: background var(--t-mid) ease, box-shadow var(--t-mid) ease,
+                  backdrop-filter var(--t-mid) ease;
+    }
+    .nav.scrolled {
+      background: rgba(255,255,255,.82);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      box-shadow: 0 1px 0 rgba(0,0,0,.08);
+    }
+    .nav-inner {
+      max-width: 1100px; margin: 0 auto; padding: 0 24px;
+      width: 100%;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: inherit;
+    }
+    .nav-logo-slot {
+      width: 32px; height: 32px;
+      background: var(--red); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 800; font-size: 14px;
+    }
+    .nav-wordmark { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+
+    .nav-right { display: flex; align-items: center; gap: 12px; }
+    .nav-link {
+      font-size: 14px; font-weight: 500; color: var(--gray-1);
+      text-decoration: none;
+      transition: color var(--t-fast) ease;
+    }
+    .nav-link:hover { color: var(--ink); }
+    .btn-nav {
+      height: 36px; padding: 0 16px;
+      background: var(--red); color: white;
+      border: none; border-radius: var(--r-sm);
+      font-size: 14px; font-weight: 600;
+      text-decoration: none;
+      display: inline-flex; align-items: center;
+      transition: background var(--t-fast) ease;
+    }
+    .btn-nav:hover { background: var(--red-dark); }
+
+    /* ── Page ── */
+    .page {
+      padding-top: calc(var(--nav-h) + 56px);
+      padding-bottom: 96px;
+    }
+    .content {
+      max-width: 720px; margin: 0 auto; padding: 0 24px;
+    }
+
+    /* ── Header ── */
+    .doc-header { margin-bottom: 48px; }
+    .doc-eyebrow {
+      font-size: 12px; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--red);
+      margin-bottom: 12px;
+    }
+    .doc-title {
+      font-size: 36px; font-weight: 700; letter-spacing: -.03em;
+      line-height: 1.1; color: var(--ink);
+      margin-bottom: 16px;
+    }
+    .doc-meta {
+      font-size: 14px; color: var(--gray-2);
+    }
+    .doc-divider {
+      height: 1px; background: var(--gray-4); margin: 32px 0;
+    }
+
+    /* ── Body ── */
+    .doc-body h2 {
+      font-size: 18px; font-weight: 700; letter-spacing: -.02em;
+      color: var(--ink); margin: 40px 0 12px;
+    }
+    .doc-body h2:first-child { margin-top: 0; }
+
+    .doc-body p {
+      font-size: 15px; line-height: 1.75; color: var(--ink-3);
+      margin-bottom: 12px;
+    }
+    .doc-body p:last-child { margin-bottom: 0; }
+
+    .doc-body ul {
+      margin: 8px 0 12px 20px;
+    }
+    .doc-body ul li {
+      font-size: 15px; line-height: 1.75; color: var(--ink-3);
+      margin-bottom: 4px;
+    }
+
+    .doc-body a {
+      color: var(--red); text-decoration: none; font-weight: 500;
+    }
+    .doc-body a:hover { text-decoration: underline; }
+
+    .doc-body strong { color: var(--ink); font-weight: 600; }
+
+    /* ── Contact card ── */
+    .contact-card {
+      background: var(--white);
+      border: 1px solid var(--gray-4);
+      border-radius: var(--r-md);
+      box-shadow: var(--shadow-sm);
+      padding: 20px 24px;
+      margin-top: 16px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .contact-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: #fff5f5;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--red); flex-shrink: 0;
+    }
+    .contact-icon svg { width: 20px; height: 20px; }
+    .contact-label { font-size: 12px; color: var(--gray-2); font-weight: 500; margin-bottom: 2px; }
+    .contact-value { font-size: 15px; font-weight: 600; color: var(--ink); }
+    .contact-value a { color: var(--red); text-decoration: none; }
+    .contact-value a:hover { text-decoration: underline; }
+
+    /* ── Footer ── */
+    .footer {
+      background: var(--ink-2); color: rgba(255,255,255,.5);
+      padding: 40px 0 32px;
+      margin-top: 48px;
+    }
+    .footer-inner {
+      max-width: 1100px; margin: 0 auto; padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+    }
+    .footer-brand { font-size: 14px; font-weight: 600; color: white; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a {
+      font-size: 13px; color: rgba(255,255,255,.45);
+      text-decoration: none;
+      transition: color .15s ease;
+    }
+    .footer-links a:hover { color: white; }
+    .footer-copy { font-size: 13px; }
+
+    /* ── Animations ── */
+    .fade-in {
+      animation: fadeUp 600ms cubic-bezier(.16,1,.3,1) both;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration:.01ms!important; transition-duration:.01ms!important; }
+    }
+
+    @media (max-width: 600px) {
+      .doc-title { font-size: 26px; }
+      .footer-inner { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAV ── -->
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a class="nav-brand" href="index.html">
+        <img src="DAS_1.0.png" alt="Dylan's Auto Sales" style="height:120px;width:auto;border-radius:8px;vertical-align:middle;">
+        <span class="nav-wordmark">Market<span style="color:var(--red)">Fill</span></span>
+      </a>
+      <div class="nav-right">
+        <a class="nav-link" href="index.html">Home</a>
+        <a class="btn-nav" href="login.html">Log in</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── PAGE ── -->
+  <main class="page">
+    <div class="content">
+
+      <div class="doc-header fade-in">
+        <div class="doc-eyebrow">Legal</div>
+        <h1 class="doc-title">Privacy Policy</h1>
+        <div class="doc-meta">Effective date: June 2026 &nbsp;·&nbsp; MarketFill by Dylan's Auto Sales</div>
+        <div class="doc-divider"></div>
+      </div>
+
+      <div class="doc-body fade-in" style="animation-delay:80ms">
+
+        <p>
+          MarketFill is a Chrome extension made by <strong>Dylan's Auto Sales</strong>. It reads vehicle details from your dealer inventory pages and pre-fills Facebook Marketplace vehicle listing forms so you can list vehicles faster. This policy explains what information we collect, how we use it, and how we protect it.
+        </p>
+
+        <h2>Information We Collect</h2>
+        <ul>
+          <li><strong>Account email address</strong> — used to identify your account and send transactional messages.</li>
+          <li><strong>Password</strong> — stored as a secure bcrypt hash. We never store or transmit your plaintext password.</li>
+          <li><strong>Subscription status</strong> — your current plan tier (free or standard), managed via Stripe.</li>
+        </ul>
+        <p>
+          We do <strong>not</strong> store the contents of dealer inventory pages you visit, vehicle listing data, or the text or photos you submit to Facebook Marketplace. That data is processed locally in your browser and sent directly from your browser to Facebook.
+        </p>
+
+        <h2>How We Use Your Information</h2>
+        <ul>
+          <li>To authenticate your account when you open the MarketFill extension.</li>
+          <li>To verify your subscription tier and grant or restrict access to features accordingly.</li>
+          <li>To manage your billing relationship through Stripe.</li>
+          <li>To respond to support requests sent to our support email.</li>
+        </ul>
+        <p>We do not use your information for advertising, profiling, or any purpose other than operating this service.</p>
+
+        <h2>Payment Processing</h2>
+        <p>
+          All payments are processed by <strong>Stripe</strong> (<a href="https://stripe.com/privacy" target="_blank" rel="noopener">stripe.com/privacy</a>). We never see or store your card number, CVV, or any other payment card details. Stripe provides us with a customer ID and subscription status only.
+        </p>
+
+        <h2>Data Sharing</h2>
+        <p>We do not sell, rent, or trade your personal data. We share limited data only with the following service providers, strictly to operate MarketFill:</p>
+        <ul>
+          <li><strong>Stripe</strong> — payment processing and subscription management.</li>
+          <li><strong>Supabase</strong> — secure cloud database where hashed passwords and account records are stored.</li>
+        </ul>
+        <p>Both providers operate under their own privacy policies and data processing agreements. We do not share data with any other third parties.</p>
+
+        <h2>Chrome Extension Permissions</h2>
+        <p>MarketFill requests the following browser permissions:</p>
+        <ul>
+          <li><strong>Active tab / scripting</strong> — to read vehicle details from the dealer inventory page you are currently viewing, only when you click "Scrape this page".</li>
+          <li><strong>Storage</strong> — to save your login token locally in your browser so you do not have to log in every time.</li>
+          <li><strong>Tabs</strong> — to open the Facebook Marketplace listing form in a new tab and pre-fill it with vehicle data.</li>
+          <li><strong>Side panel</strong> — to display the MarketFill UI without navigating away from the dealer page.</li>
+        </ul>
+        <p>The extension only reads page content when you explicitly initiate a scrape. It does not run in the background, track your browsing, or access any pages other than dealer inventory pages and the Facebook Marketplace listing form.</p>
+
+        <h2>Data Retention</h2>
+        <p>
+          Your account data is retained for as long as your account is active. You may request deletion of your account and associated data at any time by emailing us at the address below.
+        </p>
+
+        <h2>Your Rights</h2>
+        <p>
+          You may request access to, correction of, or deletion of your personal data at any time. To exercise these rights, contact us at <a href="mailto:support@dylansautosales.com">support@dylansautosales.com</a>.
+        </p>
+
+        <h2>Changes to This Policy</h2>
+        <p>
+          If we make material changes to this policy, we will update the effective date above. Continued use of MarketFill after changes are posted constitutes acceptance of the updated policy.
+        </p>
+
+        <h2>Contact Us</h2>
+        <p>Questions about this privacy policy? Reach us at:</p>
+
+        <div class="contact-card">
+          <div class="contact-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
+            </svg>
+          </div>
+          <div>
+            <div class="contact-label">Email</div>
+            <div class="contact-value"><a href="mailto:support@dylansautosales.com">support@dylansautosales.com</a></div>
+          </div>
+        </div>
+
+      </div><!-- /doc-body -->
+    </div><!-- /content -->
+  </main>
+
+  <!-- ── FOOTER ── -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-brand"><img src="DAS_1.0.png" alt="Dylan's Auto Sales" style="height:40px;width:auto;vertical-align:middle;margin-right:8px;">Market<span style="color:#A41414">Fill</span> by Dylan's Auto Sales</span>
+      <div class="footer-links">
+        <a href="privacy.html">Privacy policy</a>
+        <a href="#">Terms of service</a>
+      </div>
+      <span class="footer-copy">&copy; 2026 Dylan's Auto Sales. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script>
+    const nav = document.getElementById('nav');
+    window.addEventListener('scroll', () => {
+      nav.classList.toggle('scrolled', window.scrollY > 20);
+    }, { passive: true });
+  </script>
+
+</body>
+</html>

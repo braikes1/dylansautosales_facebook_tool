@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You're Subscribed — MarketFill</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red:       #A41414;
+      --red-dark:  #7e0f0f;
+      --ink:       #0f0f10;
+      --ink-2:     #1c1c1e;
+      --ink-3:     #3a3a3c;
+      --gray-1:    #636366;
+      --gray-2:    #8e8e93;
+      --gray-3:    #c7c7cc;
+      --gray-4:    #e5e5ea;
+      --gray-5:    #f2f2f7;
+      --gray-6:    #f9f9fb;
+      --white:     #ffffff;
+      --green:     #16a34a;
+      --green-dark:#15803d;
+      --green-bg:  #f0fdf4;
+      --green-bd:  #86efac;
+
+      --nav-h:     64px;
+      --r-sm:      10px;
+      --r-md:      16px;
+      --r-lg:      20px;
+      --r-xl:      28px;
+
+      --shadow-sm: 0 2px 8px rgba(0,0,0,.07), 0 1px 3px rgba(0,0,0,.04);
+      --shadow-lg: 0 16px 48px rgba(0,0,0,.10), 0 4px 14px rgba(0,0,0,.06);
+
+      --ease-out:  cubic-bezier(.16,1,.3,1);
+      --t-fast:    150ms;
+      --t-mid:     220ms;
+      --t-slow:    500ms;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                   Helvetica, Arial, sans-serif;
+      background: var(--gray-6);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+    }
+
+    /* ── Nav ── */
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--nav-h);
+      display: flex; align-items: center;
+      transition: background var(--t-mid) ease, box-shadow var(--t-mid) ease,
+                  backdrop-filter var(--t-mid) ease;
+    }
+    .nav.scrolled {
+      background: rgba(255,255,255,.82);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      box-shadow: 0 1px 0 rgba(0,0,0,.08);
+    }
+    .nav-inner {
+      max-width: 1100px; margin: 0 auto; padding: 0 24px;
+      width: 100%;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: inherit;
+    }
+    .nav-logo-slot {
+      width: 32px; height: 32px; background: var(--red); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 800; font-size: 14px;
+    }
+    .nav-wordmark { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+
+    .nav-actions { display: flex; align-items: center; gap: 10px; }
+    .btn-ghost {
+      height: 38px; padding: 0 16px; border: none; border-radius: var(--r-sm);
+      font-size: 14px; font-weight: 500; color: var(--ink-3); background: transparent;
+      cursor: pointer; text-decoration: none;
+      display: inline-flex; align-items: center;
+      transition: background var(--t-fast) ease, color var(--t-fast) ease;
+    }
+    .btn-ghost:hover { background: var(--gray-5); color: var(--ink); }
+    .btn-primary-nav {
+      height: 38px; padding: 0 18px; border: none; border-radius: var(--r-sm);
+      font-size: 14px; font-weight: 600; color: var(--white); background: var(--red);
+      cursor: pointer; text-decoration: none;
+      display: inline-flex; align-items: center;
+      box-shadow: 0 2px 6px rgba(164,20,20,.28);
+      transition: background var(--t-fast) ease, transform var(--t-fast) ease;
+    }
+    .btn-primary-nav:hover { background: var(--red-dark); transform: translateY(-1px); }
+
+    .nav-user { display: none; align-items: center; gap: 10px; }
+    .nav-user-email {
+      font-size: 13px; color: var(--gray-1);
+      max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .nav-user-account {
+      height: 38px; padding: 0 16px;
+      background: var(--gray-5); color: var(--ink-3);
+      border: 1.5px solid var(--gray-4); border-radius: var(--r-sm);
+      font-size: 14px; font-weight: 500; text-decoration: none;
+      display: inline-flex; align-items: center;
+      transition: background var(--t-fast) ease, border-color var(--t-fast) ease;
+    }
+    .nav-user-account:hover { background: var(--gray-4); border-color: var(--gray-3); }
+    .nav-user-logout {
+      font-size: 13px; color: var(--gray-2);
+      background: none; border: none; cursor: pointer; padding: 4px 2px;
+      transition: color var(--t-fast) ease;
+    }
+    .nav-user-logout:hover { color: var(--ink); }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      display: flex; align-items: center; justify-content: center;
+      padding: calc(var(--nav-h) + 48px) 24px 80px;
+    }
+
+    /* ── Success card ── */
+    .card {
+      background: var(--white);
+      border: 1px solid var(--gray-4);
+      border-radius: var(--r-xl);
+      box-shadow: var(--shadow-lg);
+      padding: 56px 52px 52px;
+      max-width: 520px; width: 100%;
+      text-align: center;
+      animation: cardUp 600ms var(--ease-out) both;
+    }
+
+    @keyframes cardUp {
+      from { opacity: 0; transform: translateY(28px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Checkmark animation */
+    .check-wrap {
+      width: 72px; height: 72px; margin: 0 auto 32px;
+      background: var(--green-bg);
+      border: 2px solid var(--green-bd);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      animation: popIn 500ms var(--ease-out) 180ms both;
+    }
+
+    @keyframes popIn {
+      0%   { opacity: 0; transform: scale(.6); }
+      70%  { transform: scale(1.08); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .check-wrap svg {
+      width: 34px; height: 34px;
+      stroke: var(--green); stroke-width: 2.5;
+      stroke-linecap: round; stroke-linejoin: round; fill: none;
+      stroke-dasharray: 40;
+      stroke-dashoffset: 40;
+      animation: drawCheck 400ms ease-out 480ms forwards;
+    }
+
+    @keyframes drawCheck {
+      to { stroke-dashoffset: 0; }
+    }
+
+    .card h1 {
+      font-size: clamp(22px, 4vw, 28px);
+      font-weight: 700; letter-spacing: -.02em;
+      color: var(--ink); margin-bottom: 14px;
+      animation: fadeUp 500ms var(--ease-out) 300ms both;
+    }
+
+    .card p {
+      font-size: 16px; color: var(--gray-1); line-height: 1.65;
+      margin-bottom: 36px;
+      animation: fadeUp 500ms var(--ease-out) 380ms both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .btn-cta {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; height: 52px;
+      background: var(--green); color: var(--white);
+      border: none; border-radius: var(--r-md);
+      font-size: 16px; font-weight: 600;
+      text-decoration: none; cursor: pointer;
+      box-shadow: 0 3px 10px rgba(22,163,74,.28);
+      transition: background var(--t-fast) ease, transform var(--t-fast) ease,
+                  box-shadow var(--t-fast) ease;
+      animation: fadeUp 500ms var(--ease-out) 460ms both;
+      margin-bottom: 16px;
+    }
+    .btn-cta:hover {
+      background: var(--green-dark); transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(22,163,74,.34);
+    }
+    .btn-cta:active { transform: translateY(0); }
+    .btn-cta svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+    .link-secondary {
+      font-size: 14px; color: var(--gray-2); text-decoration: none;
+      display: inline-block;
+      animation: fadeUp 500ms var(--ease-out) 520ms both;
+      transition: color var(--t-fast) ease;
+    }
+    .link-secondary:hover { color: var(--ink); }
+
+    /* ── Footer ── */
+    .footer {
+      background: var(--ink-2); color: rgba(255,255,255,.5);
+      padding: 36px 24px;
+    }
+    .footer-inner {
+      max-width: 1100px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 10px;
+    }
+    .footer-brand { font-size: 14px; font-weight: 600; color: white; }
+    .footer-copy  { font-size: 13px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration:.01ms!important; transition-duration:.01ms!important; }
+    }
+
+    @media (max-width: 560px) {
+      .card { padding: 40px 28px; }
+      .nav-user-email { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAV ── -->
+  <nav class="nav" id="nav">
+    <div class="nav-inner">
+      <a class="nav-brand" href="index.html">
+        <img src="DAS_1.0.png" alt="Dylan's Auto Sales" style="height:120px;width:auto;border-radius:8px;vertical-align:middle;">
+        <span class="nav-wordmark">Market<span style="color:var(--red)">Fill</span></span>
+      </a>
+      <div class="nav-actions" id="navActions">
+        <a class="btn-ghost" href="login.html">Log in</a>
+        <a class="btn-primary-nav" href="signup.html">Create account</a>
+      </div>
+      <div class="nav-user" id="navUser">
+        <span class="nav-user-email" id="navUserEmail"></span>
+        <a class="nav-user-account" href="account.html">My Account</a>
+        <button class="nav-user-logout" id="navLogout">Log out</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── MAIN ── -->
+  <main>
+    <div class="card">
+
+      <div class="check-wrap" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+
+      <h1>You're subscribed to MarketFill</h1>
+
+      <p>Your Standard plan is now active. You're ready to start listing vehicles on Facebook Marketplace in seconds.</p>
+
+      <!-- EXTENSION LINK SLOT — replace href="#" with Chrome Web Store URL when published -->
+      <a class="btn-cta" href="#" id="extensionBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Install the Chrome Extension
+      </a>
+
+      <a class="link-secondary" href="account.html">Go to My Account →</a>
+
+    </div>
+  </main>
+
+  <!-- ── FOOTER ── -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-brand"><img src="DAS_1.0.png" alt="Dylan's Auto Sales" style="height:40px;width:auto;vertical-align:middle;margin-right:8px;">Market<span style="color:#A41414">Fill</span> by Dylan's Auto Sales</span>
+      <span class="footer-copy">&copy; 2026 Dylan's Auto Sales. All rights reserved.</span>
+    </div>
+  </footer>
+
+  <script>
+    // ── Frosted nav ──
+    const nav = document.getElementById('nav');
+    window.addEventListener('scroll', () => {
+      nav.classList.toggle('scrolled', window.scrollY > 20);
+    }, { passive: true });
+
+    // ── Auth state ──
+    (function () {
+      const token = localStorage.getItem('postbot_token');
+      if (!token) return;
+      try {
+        const seg = token.split('.')[1];
+        const padded = seg + '==='.slice((seg.length + 3) % 4);
+        const claims = JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
+        document.getElementById('navActions').style.display = 'none';
+        const navUser = document.getElementById('navUser');
+        navUser.style.display = 'flex';
+        document.getElementById('navUserEmail').textContent = claims.email || '';
+        document.getElementById('navLogout').addEventListener('click', () => {
+          localStorage.removeItem('postbot_token');
+          localStorage.removeItem('postbot_email');
+          window.location.href = 'index.html';
+        });
+      } catch {}
+    })();
+  </script>
+
+</body>
+</html>

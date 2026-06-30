@@ -4,6 +4,7 @@ let latestListing = null;
 
 const API_BASE    = "https://dylansautosales-facebook-tool.onrender.com";
 const API_EXTRACT = `${API_BASE}/fb/extract_html`;
+const API_SCRAPE  = `${API_BASE}/fb/scrape_url`;
 const API_HEALTH  = `${API_BASE}/health`;
 
 // ====== image download helper ======
@@ -102,7 +103,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 async function fetchDetailDataViaApi(detailUrl) {
-  // Verify the local server is reachable
+  // Verify the server is reachable
   console.log("[sw] Pinging health check:", API_HEALTH);
   try {
     const ping = await fetch(API_HEALTH, { signal: AbortSignal.timeout(5000) });
@@ -113,6 +114,32 @@ async function fetchDetailDataViaApi(detailUrl) {
     throw new Error(
       "Cannot reach the MarketFill server. Make sure the MarketFill service is running and try again."
     );
+  }
+
+  // ── PRIMARY PATH: FireCrawl via /fb/scrape_url ──────────────────────────
+  console.log("[sw] PRIMARY: calling /fb/scrape_url for:", detailUrl);
+  try {
+    const scrapeResp = await fetch(API_SCRAPE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: detailUrl }),
+      signal: AbortSignal.timeout(90000),
+    });
+
+    if (!scrapeResp.ok) {
+      throw new Error(`/fb/scrape_url returned HTTP ${scrapeResp.status}`);
+    }
+
+    const fields = await scrapeResp.json();
+    console.log("[sw] /fb/scrape_url success. Fields:", Object.keys(fields));
+    const scrapeImages = Array.isArray(fields.images) ? fields.images : [];
+    console.log("[sw] /fb/scrape_url images count:", scrapeImages.length);
+
+    return { fields, images: scrapeImages, html: "" };
+
+  } catch (scrapeErr) {
+    // ── FALLBACK PATH: tab-scrape + /fb/extract_html ──────────────────────
+    console.warn("[sw] /fb/scrape_url failed, falling back to /fb/extract_html. Reason:", scrapeErr.message);
   }
 
   const tab = await chrome.tabs.create({ url: detailUrl, active: false });
@@ -161,16 +188,16 @@ async function fetchDetailDataViaApi(detailUrl) {
 
         const { url, html, images } = inj.result || {};
 
-        console.log("[sw] Calling API extract:", API_EXTRACT, "| page URL:", url, "| images:", images.length);
+        console.log("[sw] FALLBACK: calling /fb/extract_html | page URL:", url, "| images:", images.length);
         const resp = await fetch(API_EXTRACT, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url, html, images }),
         });
 
-        console.log("[sw] API extract response status:", resp.status);
+        console.log("[sw] /fb/extract_html response status:", resp.status);
         const fields = await resp.json().catch(() => ({}));
-        console.log("[sw] API extract fields received:", fields);
+        console.log("[sw] /fb/extract_html fields received:", fields);
         const aiImages = Array.isArray(fields.images) ? fields.images : [];
 
         chrome.tabs.remove(tab.id);
@@ -181,7 +208,7 @@ async function fetchDetailDataViaApi(detailUrl) {
           html,
         });
       } catch (err) {
-        console.error("[sw] fetchDetailDataViaApi inner error:", err.message, err);
+        console.error("[sw] fetchDetailDataViaApi fallback error:", err.message, err);
         try { chrome.tabs.remove(tab.id); } catch (e) {}
         reject(err);
       }

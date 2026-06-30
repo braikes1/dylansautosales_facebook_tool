@@ -7,3 +7,4 @@ supabase
 bcrypt
 pyjwt
 stripe
+firecrawl-py
