@@ -224,6 +224,18 @@ class ScrapeUrlPayload(BaseModel):
 
 
 # FireCrawl key → result dict Title-Case key mapping
+_BODY_TYPE_SUFFIXES = re.compile(
+    r"\s+\b(Sedan|Hatchback|Coupe|Convertible|Wagon|SUV|Truck|Van|Minivan)\b.*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_body_type_suffix(model: str) -> str:
+    """Strip trailing body-type words from a FireCrawl model string.
+    E.g. 'Civic Sedan' -> 'Civic', 'HR-V SUV' -> 'HR-V'."""
+    return _BODY_TYPE_SUFFIXES.sub("", model).strip()
+
+
 _FC_KEY_MAP = {
     "mileage":        "Mileage",
     "vin":            "VIN",
@@ -329,6 +341,10 @@ def scrape_url(body: ScrapeUrlPayload):
     # Default Fuel Type to Gasoline if blank
     if not result["Fuel Type"]:
         result["Fuel Type"] = "Gasoline"
+
+    # Strip body-type suffix from Model (e.g. "Civic Sedan" -> "Civic")
+    if result.get("Model"):
+        result["Model"] = _strip_body_type_suffix(result["Model"])
 
     # Images — full gallery from FireCrawl
     raw_images = vehicle.get("images") or []
