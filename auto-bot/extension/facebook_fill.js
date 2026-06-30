@@ -315,8 +315,8 @@
     return null;
   }
 
-  async function selectVehicleTypeOther(scope) {
-    const targetText = "Other";
+  async function selectVehicleTypeCarTruck(scope) {
+    const targetText = "Car/Truck";
 
     const vtField = findVehicleTypeField(scope);
     if (!vtField) {
@@ -354,6 +354,251 @@
     }
   }
 
+
+  // ---------- Generic dropdown helper (Car/Truck form fields) ----------
+
+  // Resolve each combobox's OWN accessible label via aria-labelledby (or
+  // aria-label) and match it to the requested field. This avoids matching a
+  // broad wrapper element and grabbing the wrong (first) combobox.
+  function comboboxLabelText(combo) {
+    const labelledBy = combo.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const txt = labelledBy
+        .split(/\s+/)
+        .map((id) => document.getElementById(id))
+        .filter(Boolean)
+        .map((el) => (el.textContent || "").trim())
+        .join(" ")
+        .trim();
+      if (txt) return txt;
+    }
+    return (combo.getAttribute("aria-label") || "").trim();
+  }
+
+  function findComboboxByLabel(scope, labelText) {
+    const want = labelText.trim().toLowerCase();
+    const combos = Array.from(scope.querySelectorAll('[role="combobox"]'));
+
+    // 1) exact label match (preferred)
+    for (const combo of combos) {
+      if (comboboxLabelText(combo).toLowerCase() === want) {
+        const r = combo.getBoundingClientRect();
+        if (r.width && r.height) return combo;
+      }
+    }
+    // 2) startsWith/contains on the combobox's OWN label only
+    for (const combo of combos) {
+      const txt = comboboxLabelText(combo).toLowerCase();
+      if (txt && (txt.startsWith(want) || txt.includes(want))) {
+        const r = combo.getBoundingClientRect();
+        if (r.width && r.height) return combo;
+      }
+    }
+    return null;
+  }
+
+  async function selectFromDropdown(scope, labelText, valueStr, opts = {}) {
+    const exact = !!opts.exact;
+    const val = String(valueStr || "").trim();
+    if (!val) {
+      LOG(`No value provided for ${labelText}`);
+      return false;
+    }
+
+    const field = findComboboxByLabel(scope, labelText);
+    if (!field) {
+      LOG(`${labelText} field not found`);
+      return false;
+    }
+    LOG(`${labelText} field:`, field);
+
+    field.click();
+    field.focus?.();
+    await sleep(450);
+
+    // Searchable comboboxes (e.g. Make) reveal a text input and virtualize
+    // their option list. Type the value to filter so the option renders.
+    let searchInput = null;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA") && ae !== field) {
+      searchInput = ae;
+    }
+    if (!searchInput) {
+      const openBoxes = Array.from(
+        document.querySelectorAll('[role="listbox"],[role="dialog"]')
+      );
+      for (const box of openBoxes) {
+        const inp = box.querySelector('input[type="text"],input:not([type])');
+        if (inp) {
+          const r = inp.getBoundingClientRect();
+          if (r.width && r.height) { searchInput = inp; break; }
+        }
+      }
+    }
+    if (searchInput) {
+      LOG(`${labelText} searchInput found, typing to filter`);
+      await typeIntoInput(searchInput, val);
+      await sleep(500);
+    }
+
+    const wantLower = val.toLowerCase();
+    const matchOpt = (o) => {
+      const txt = (o.textContent || "").trim().toLowerCase();
+      if (!txt) return false;
+      if (exact) return txt === wantLower;
+      return (
+        txt === wantLower || txt.includes(wantLower) || wantLower.includes(txt)
+      );
+    };
+
+    // Scan options; if not found, scroll the (virtualized) listbox and retry.
+    let option = null;
+    let lastCount = -1;
+    for (let attempt = 0; attempt < 14 && !option; attempt++) {
+      const listboxes = Array.from(
+        document.querySelectorAll('[role="listbox"]')
+      );
+      let optionEls = [];
+      for (const lb of listboxes) {
+        optionEls = optionEls.concat(
+          Array.from(lb.querySelectorAll('[role="option"]'))
+        );
+      }
+      option = optionEls.find(matchOpt);
+      if (option) break;
+
+      if (listboxes.length) {
+        const lb = listboxes[listboxes.length - 1];
+        lb.scrollTop = lb.scrollTop + Math.max(220, lb.clientHeight || 220);
+        if (optionEls.length === lastCount && attempt > 2) break; // hit bottom
+        lastCount = optionEls.length;
+      }
+      await sleep(180);
+    }
+
+    if (option) {
+      LOG(`${labelText} option:`, option.textContent.trim());
+      option.scrollIntoView({ block: "nearest" });
+      option.click();
+    } else {
+      LOG(`${labelText} option not found for: ${val}`);
+      const seen = [];
+      document
+        .querySelectorAll('[role="listbox"] [role="option"]')
+        .forEach((o) => {
+          const t = (o.textContent || "").trim();
+          if (t) seen.push(t);
+        });
+      if (seen.length)
+        LOG(`${labelText} available options:`, JSON.stringify(seen.slice(0, 20)));
+    }
+    await sleep(200);
+    return !!option;
+  }
+
+  // ---------- Color mapping + clean-title helpers ----------
+
+  function normalizeColor(raw) {
+    const s = String(raw || "").toLowerCase();
+    if (!s) return "";
+    // order matters: check compound terms before bare ones
+    const map = [
+      ["off white", "Off white"],
+      ["steel", "Gray"],
+      ["charcoal", "Charcoal"],
+      ["white", "White"],
+      ["black", "Black"],
+      ["silver", "Silver"],
+      ["grey", "Gray"],
+      ["gray", "Gray"],
+      ["red", "Red"],
+      ["blue", "Blue"],
+      ["green", "Green"],
+      ["brown", "Brown"],
+      ["beige", "Beige"],
+      ["tan", "Tan"],
+      ["gold", "Gold"],
+      ["orange", "Orange"],
+      ["yellow", "Yellow"],
+      ["purple", "Purple"],
+      ["pink", "Pink"],
+      ["burgundy", "Burgundy"],
+      ["turquoise", "Turquoise"],
+    ];
+    for (const [k, v] of map) if (s.includes(k)) return v;
+    return ""; // unknown -> leave blank for the user to pick
+  }
+
+  function mapVehicleCondition(raw) {
+    const s = String(raw || "").toLowerCase().trim();
+    if (!s || s === "new") return "Excellent";
+    if (s.includes("like new") || s.includes("certified")) return "Very good";
+    if (s.includes("excellent")) return "Excellent";
+    if (s.includes("very good")) return "Very good";
+    if (s.includes("fair")) return "Fair";
+    if (s.includes("poor")) return "Poor";
+    if (s.includes("good")) return "Good";
+    if (s.includes("new")) return "Excellent";
+    return "Good";
+  }
+
+  async function checkCleanTitle(scope) {
+    const els = [
+      ...scope.querySelectorAll(
+        '[role="checkbox"],[role="switch"],input[type="checkbox"]'
+      ),
+    ];
+    for (const el of els) {
+      const al = (el.getAttribute("aria-label") || "").toLowerCase();
+      const near = (el.closest("label")?.textContent || "").toLowerCase();
+      if ((al + " " + near).includes("clean title")) {
+        const checked =
+          el.getAttribute("aria-checked") === "true" || el.checked === true;
+        if (!checked) {
+          el.click();
+          LOG("Clean title checked");
+        } else {
+          LOG("Clean title already checked");
+        }
+        await sleep(120);
+        return true;
+      }
+    }
+    LOG("Clean title checkbox not found");
+    return false;
+  }
+
+  // ---------- TEMP DIAGNOSTIC: dump remaining form labels (remove later) ----------
+
+  function dumpVehicleFormLabels(scope) {
+    try {
+      const labels = [...scope.querySelectorAll("span,label")]
+        .map((s) => (s.textContent || "").trim())
+        .filter(
+          (t) =>
+            t.length > 1 &&
+            t.length < 30 &&
+            /exterior|interior|body style|body type|condition|fuel|transmission|clean title|title status/i.test(
+              t
+            )
+        );
+      LOG("FORM-LABELS:", JSON.stringify([...new Set(labels)]));
+
+      const checks = [
+        ...scope.querySelectorAll(
+          '[role="checkbox"],[role="switch"],input[type="checkbox"]'
+        ),
+      ].map(
+        (e) =>
+          e.getAttribute("aria-label") ||
+          (e.closest("label")?.textContent || "").trim() ||
+          "(no label)"
+      );
+      LOG("FORM-CHECKBOXES:", JSON.stringify([...new Set(checks)]));
+    } catch (e) {
+      LOG("dumpVehicleFormLabels error:", e);
+    }
+  }
 
   // ---------- Special: Description finder ----------
 
@@ -454,6 +699,44 @@
       listingRaw.description ||
       "";
 
+    const mileage =
+      listingRaw.Mileage ||
+      listingRaw.mileage ||
+      "";
+
+    const condition =
+      listingRaw.Condition ||
+      listingRaw.condition ||
+      "";
+
+    const exteriorColor = normalizeColor(
+      listingRaw.ExteriorColor ||
+        listingRaw.exterior_color ||
+        listingRaw.exteriorColor ||
+        ""
+    );
+
+    const interiorColor = normalizeColor(
+      listingRaw.InteriorColor ||
+        listingRaw.interior_color ||
+        listingRaw.interiorColor ||
+        ""
+    );
+
+    const bodyStyle =
+      listingRaw.BodyStyle ||
+      listingRaw.body_type ||
+      listingRaw.bodyType ||
+      listingRaw.body_style ||
+      "";
+
+    let fuelType =
+      listingRaw.FuelType ||
+      listingRaw.fuel_type ||
+      listingRaw.fuelType ||
+      "";
+    if (!fuelType) fuelType = "Gasoline"; // sensible default; user reviews
+
     const normalized = {
       Title: title,
       Year: year,
@@ -461,6 +744,12 @@
       Model: model,
       Price: price,
       Description: description,
+      Mileage: mileage,
+      Condition: condition,
+      ExteriorColor: exteriorColor,
+      InteriorColor: interiorColor,
+      BodyStyle: bodyStyle,
+      FuelType: fuelType,
     };
 
     LOG("Using normalized listing:", normalized);
@@ -584,7 +873,7 @@
       return;
     }
 
-    await selectVehicleTypeOther(composer)
+    await selectVehicleTypeCarTruck(composer)
 
     // Price
     if (listing.Price) {
@@ -596,14 +885,10 @@
       }
     }
 
-    // Make
+    // Make – dropdown on the Car/Truck form
     if (listing.Make) {
-      const makeInput = findInputByLabels(["make"], composer);
-      LOG("Make input:", makeInput);
-      if (makeInput) {
-        await typeIntoInput(makeInput, String(listing.Make));
-        await sleep(80);
-      }
+      await selectFromDropdown(composer, "Make", listing.Make);
+      await sleep(80);
     }
 
     // Model
@@ -616,10 +901,63 @@
       }
     }
 
+    // Mileage – text input; new vehicles default to a minimum
+    {
+      const NEW_CAR_MIN_MILEAGE = "300"; // change here if FB needs different
+      let mileageVal = String(listing.Mileage || "").replace(/[^0-9]/g, "");
+      const cond = String(listing.Condition || "").toLowerCase();
+      if (!mileageVal || cond.includes("new")) {
+        mileageVal = NEW_CAR_MIN_MILEAGE;
+      }
+      const mileageInput = findInputByLabels(["mileage"], composer);
+      LOG("Mileage input:", mileageInput, "value:", mileageVal);
+      if (mileageInput) {
+        await typeIntoInput(mileageInput, mileageVal);
+        await sleep(80);
+      }
+    }
+
     // Year – use dedicated finder
     if (listing.Year) {
       await selectYearFromDropdown(composer, listing.Year);
     }
+
+    // Body style – dropdown
+    if (listing.BodyStyle) {
+      await selectFromDropdown(composer, "Body style", listing.BodyStyle);
+      await sleep(80);
+    }
+
+    // Exterior color – dropdown
+    if (listing.ExteriorColor) {
+      await selectFromDropdown(composer, "Exterior color", listing.ExteriorColor);
+      await sleep(80);
+    }
+
+    // Interior color – dropdown
+    if (listing.InteriorColor) {
+      await selectFromDropdown(composer, "Interior color", listing.InteriorColor);
+      await sleep(80);
+    }
+
+    // Vehicle condition – dropdown (map New -> Excellent, etc.)
+    if (listing.Condition) {
+      await selectFromDropdown(
+        composer,
+        "Vehicle condition",
+        mapVehicleCondition(listing.Condition)
+      );
+      await sleep(80);
+    }
+
+    // Fuel type – dropdown
+    if (listing.FuelType) {
+      await selectFromDropdown(composer, "Fuel type", listing.FuelType);
+      await sleep(80);
+    }
+
+    // Clean title checkbox
+    await checkCleanTitle(composer);
 
     // Description – textarea or contenteditable
     if (listing.Description) {
