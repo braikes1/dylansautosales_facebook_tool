@@ -546,11 +546,6 @@ function scrapeVehiclesOnPage() {
     return bestGroup; // null → caller falls back to keyword scoring
   }
 
-  // Sanity check: log any stated vehicle count from the page (not used for logic)
-  const _pgText = document.body?.innerText || "";
-  const _cntM   = _pgText.match(/(\d[\d,]*)\s+(?:matching\s+)?(?:New\s+)?(?:Vehicles?|Results?|Listings?)/i);
-  if (_cntM) console.log("[scraper] Page states", _cntM[1], "vehicles");
-
   // Try repeating-sibling detection first
   const _repeating = findRepeatingCards();
   let candidates;
