@@ -487,17 +487,93 @@ function scrapeVehiclesOnPage() {
     return null; // no tighter subtree found — caller uses findDetailLink(card)
   }
 
-  const nodes = Array.from(document.querySelectorAll("article,li,div,section"));
-  const candidates = [];
-  for (const el of nodes) {
-    const txt = el.innerText?.trim() ?? "";
-    let score = 0;
-    if (PRICE_RE.test(txt))                                   score += 2;
-    if (VIN_RE.test(txt))                                     score += 3;
-    if (MILES_RE.test(txt))                                   score += 1;
-    if (/\b(VIN|Stock|Mileage|Certified|MSRP)\b/i.test(txt)) score += 1;
-    if (score >= 3) candidates.push(el);
-    if (candidates.length > 250) break;
+  // ── PRIMARY: find real per-vehicle cards via repeated-sibling detection ──
+  //
+  // Every inventory page renders vehicle cards as a large set of same-class
+  // sibling elements under a common parent (a repeating grid or list).
+  // Detecting THAT repeating group gives us true 1-element-per-vehicle cards
+  // so that text.match(VIN_RE), querySelector("img"), etc. all operate on
+  // exactly one vehicle's DOM subtree.
+  //
+  // The scoring-based approach (kept as FALLBACK below) picks up ancestor
+  // wrappers whose innerText spans many vehicles — so the "first VIN" and
+  // "first link" are always for whichever vehicle happens to appear first in
+  // the blob, regardless of which card the user clicked.
+  //
+  // Algorithm:
+  //   1. Group every article/li/div/section element by parent + tagName + className.
+  //   2. For groups with 5+ members, count how many members INDIVIDUALLY
+  //      contain a price AND a VIN (or stock-number) in their own textContent.
+  //   3. The group where ≥70 % of members pass that check and has the most
+  //      qualifying members is the actual vehicle card list.
+  function findRepeatingCards() {
+    const allEls = Array.from(document.querySelectorAll("article,li,div,section"));
+    // WeakMap<parentElement, Map<"TAG|className", Element[]>>
+    const parentGroups = new WeakMap();
+    const allParents   = [];
+
+    for (const el of allEls) {
+      const parent = el.parentElement;
+      if (!parent) continue;
+      if (!parentGroups.has(parent)) {
+        parentGroups.set(parent, new Map());
+        allParents.push(parent);
+      }
+      const key = el.tagName + "|" + (el.className || "").trim();
+      const map = parentGroups.get(parent);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(el);
+    }
+
+    let bestGroup = null;
+    let bestHits  = 0;
+
+    for (const parent of allParents) {
+      for (const [, els] of parentGroups.get(parent)) {
+        if (els.length < 5) continue;                   // need meaningful repetition
+        let hits = 0;
+        for (const el of els) {
+          const txt = el.textContent || "";
+          // Each real card individually contains a price AND a VIN or stock #
+          if (PRICE_RE.test(txt) && (VIN_RE.test(txt) || /\bStock\b/i.test(txt))) hits++;
+        }
+        if (hits / els.length >= 0.7 && hits > bestHits) {
+          bestHits  = hits;
+          bestGroup = els;
+        }
+      }
+    }
+    return bestGroup; // null → caller falls back to keyword scoring
+  }
+
+  // Sanity check: log any stated vehicle count from the page (not used for logic)
+  const _pgText = document.body?.innerText || "";
+  const _cntM   = _pgText.match(/(\d[\d,]*)\s+(?:matching\s+)?(?:New\s+)?(?:Vehicles?|Results?|Listings?)/i);
+  if (_cntM) console.log("[scraper] Page states", _cntM[1], "vehicles");
+
+  // Try repeating-sibling detection first
+  const _repeating = findRepeatingCards();
+  let candidates;
+  if (_repeating && _repeating.length >= 2) {
+    console.log("[scraper] PRIMARY repeating-sibling detection:", _repeating.length, "cards");
+    candidates = _repeating;
+  } else {
+    // ── FALLBACK: keyword-scored wrapper detection ────────────────────────
+    // Kept intact; used when no clear repeating grid structure is found.
+    console.log("[scraper] FALLBACK keyword scoring (no repeating group detected)");
+    const _nodes  = Array.from(document.querySelectorAll("article,li,div,section"));
+    const _scored = [];
+    for (const el of _nodes) {
+      const txt = el.innerText?.trim() ?? "";
+      let score = 0;
+      if (PRICE_RE.test(txt))                                   score += 2;
+      if (VIN_RE.test(txt))                                     score += 3;
+      if (MILES_RE.test(txt))                                   score += 1;
+      if (/\b(VIN|Stock|Mileage|Certified|MSRP)\b/i.test(txt)) score += 1;
+      if (score >= 3) _scored.push(el);
+      if (_scored.length > 250) break;
+    }
+    candidates = _scored;
   }
 
   const pickAttr = (el, sels, attr) => {
