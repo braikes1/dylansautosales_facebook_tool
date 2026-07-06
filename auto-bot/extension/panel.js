@@ -465,6 +465,43 @@ function scrapeVehiclesOnPage() {
     return null;
   };
 
+  // Bug 2 fix: normalize raw title to "Year Make Model" format, stripping
+  // trim levels, body styles, drivetrain strings, and marketing words.
+  function cleanVehicleTitle(raw) {
+    if (!raw) return raw;
+    // Find "Year Make Model..." pattern
+    const m = raw.match(/\b((?:19|20)\d{2})\s+([A-Z][a-zA-Z0-9\-]+(?:\s+[A-Za-z0-9\-]+){0,3})/);
+    if (!m) return raw; // can't find year+words — return raw unchanged
+
+    const year = m[1];
+    let rest = m[2];
+
+    // Strip known trailing junk words repeatedly from the end
+    const JUNK_SUFFIXES = [
+      "FWD", "AWD", "4WD", "RWD", "4MATIC", "xDrive",
+      "4D", "2D", "3D",
+      "Sedan", "Hatchback", "Coupe", "Convertible", "Wagon",
+      "SUV", "Sport", "Utility", "Crew", "Cab", "Extended", "Regular",
+      "Pickup", "Minivan", "Van",
+      "New", "Used", "Certified", "CPO",
+    ];
+    let words = rest.split(/\s+/);
+    let changed = true;
+    while (changed && words.length > 1) {
+      changed = false;
+      const last = words[words.length - 1];
+      if (JUNK_SUFFIXES.some((j) => j.toLowerCase() === last.toLowerCase())) {
+        words.pop();
+        changed = true;
+      }
+    }
+    rest = words.join(" ").trim();
+
+    // Cap to Make + up to 2 model words (3 tokens total)
+    const capped = rest.split(/\s+/).slice(0, 3).join(" ");
+    return `${year} ${capped}`.trim();
+  }
+
   // Extract the best available URL from an <img> element, trying all known
   // lazy-load attributes before giving up.
   function imgSrc(imgEl) {
@@ -521,7 +558,8 @@ function scrapeVehiclesOnPage() {
   const out = [];
   for (const card of candidates) {
     const text       = card.innerText || "";
-    const title      = extractTitle(card, text);
+    const rawTitle   = extractTitle(card, text);
+    const title      = cleanVehicleTitle(rawTitle);
     const detailHref = findDetailLink(card);
     const detailUrl  = abs(detailHref);
     const vin        = (text.match(VIN_RE) || [])[0] || null;
