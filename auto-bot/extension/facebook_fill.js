@@ -810,9 +810,7 @@
       scope.querySelectorAll('input[type="file"]')
     ).filter((inp) => {
       const accept = (inp.getAttribute("accept") || "").toLowerCase();
-      const r = inp.getBoundingClientRect();
-      // Likely visible/used input with image accept or empty accept
-      return (accept.includes("image") || accept === "") && r.width >= 0 && r.height >= 0;
+      return accept.includes("image") || accept === "";
     });
 
     const fileInput = fileInputs[0];
@@ -823,41 +821,49 @@
 
     LOG("[fb-fill] Using file input for images:", fileInput);
 
-    const fetched = await fetchImagesViaBackground(imageUrls);
-    if (!fetched.length) {
-      LOG("[fb-fill] Background returned no images");
+    // Bug 3 fix: fetch ALL images first, then assign to fileInput ONCE.
+    // Assigning fileInput.files inside a loop overwrites the previous
+    // assignment each iteration — Facebook's React handler may only see
+    // the last (or first) assignment, producing inconsistent upload counts.
+    const MAX_IMAGES = 20;
+    const urls = imageUrls.slice(0, MAX_IMAGES);
+    LOG(`[fb-fill] Fetching ${urls.length} images for batch upload`);
+
+    // STEP 1 — fetch every image, collect File objects. Do NOT touch
+    // fileInput.files inside this loop.
+    const files = [];
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      try {
+        const resp = await fetch(url, { mode: "cors" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        const ext  = (blob.type || "image/jpeg").split("/")[1]?.split("+")[0] || "jpg";
+        const name = `vehicle-${Date.now()}-${i}.${ext}`;
+        files.push(new File([blob], name, { type: blob.type || "image/jpeg" }));
+      } catch (e) {
+        LOG(`[fb-fill] Failed to fetch image ${i + 1}/${urls.length}:`, url, e.message);
+      }
+    }
+
+    if (!files.length) {
+      LOG("[fb-fill] No images successfully fetched — aborting upload");
       return;
     }
 
-    // Upload images one-by-one so Facebook actually processes each file
-    for (let i = 0; i < fetched.length; i++) {
-      const img = fetched[i];
-      if (!img || !img.base64) continue;
+    // STEP 2 — build ONE DataTransfer with ALL files, assign ONCE.
+    const dt = new DataTransfer();
+    files.forEach((f) => dt.items.add(f));
 
-      try {
-        const bytes = Uint8Array.from(
-          atob(img.base64),
-          (c) => c.charCodeAt(0)
-        );
-        const blob = new Blob([bytes], { type: img.mime || "image/jpeg" });
-        const ext = (img.mime || "image/jpeg").split("/")[1] || "jpg";
-        const name = img.name || `vehicle-${Date.now()}-${i}.${ext}`;
-        const file = new File([blob], name, { type: img.mime || "image/jpeg" });
+    LOG(`[fb-fill] Uploading ${files.length} images in a single batch`);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event("input", { bubbles: true }));
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
 
-        const dt = new DataTransfer();
-        dt.items.add(file);
-
-        fileInput.files = dt.files;
-        fileInput.dispatchEvent(new Event("input", { bubbles: true }));
-        fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-
-        LOG(`[fb-fill] Uploaded image ${i + 1}/${fetched.length}`);
-        // Give FB time to recognize & start uploading this image
-        await sleep(900);
-      } catch (e) {
-        LOG("[fb-fill] Failed to upload image", i, e);
-      }
-    }
+    // STEP 3 — wait proportionally to image count so Facebook has time to
+    // process the full batch (base 2s + 300ms per image, capped at 12s).
+    const waitMs = Math.min(2000 + files.length * 300, 12000);
+    await sleep(waitMs);
 
     LOG("[fb-fill] Image upload sequence complete.");
   }
