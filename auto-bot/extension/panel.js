@@ -443,6 +443,50 @@ function scrapeVehiclesOnPage() {
     return null;
   }
 
+  // Find the <a href> closest in the DOM to the vehicle's VIN text node.
+  // Same TreeWalker-walk-up pattern as findImageNearVin — prevents grabbing
+  // the first "View Details" link from a sibling vehicle when the scored
+  // candidate is a parent wrapper containing multiple vehicle cards.
+  //
+  // Returns the href string of the best matching anchor in the tightest
+  // VIN-containing subtree, or null if no tighter match found (caller falls
+  // back to findDetailLink(card)).
+  function findLinkNearVin(card, vin) {
+    if (!vin) return null;
+
+    // Find the text node within card that contains the VIN
+    let vinEl = null;
+    const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue && node.nodeValue.includes(vin)) {
+        vinEl = node.parentElement;
+        break;
+      }
+    }
+    if (!vinEl) return null;
+
+    // Walk UP from vinEl toward card, stopping at the first ancestor
+    // (strictly inside card) that also contains a vehicle-URL or
+    // "view details" <a href>
+    let el = vinEl;
+    while (el && el !== card) {
+      const anchors = Array.from(el.querySelectorAll("a[href]"));
+      // Prefer explicit "View Details" text match
+      const textMatch = anchors.find((a) =>
+        /view\s*details|details|more info|view vehicle|see details/i.test(a.textContent || "")
+      );
+      if (textMatch) return textMatch.getAttribute("href");
+      // Fall back to URL-pattern match
+      const urlMatch = anchors.find((a) =>
+        VEHICLE_URL.test(a.getAttribute("href") || "")
+      );
+      if (urlMatch) return urlMatch.getAttribute("href");
+      el = el.parentElement;
+    }
+    return null; // no tighter subtree found — caller uses findDetailLink(card)
+  }
+
   const nodes = Array.from(document.querySelectorAll("article,li,div,section"));
   const candidates = [];
   for (const el of nodes) {
@@ -560,9 +604,15 @@ function scrapeVehiclesOnPage() {
     const text       = card.innerText || "";
     const rawTitle   = extractTitle(card, text);
     const title      = cleanVehicleTitle(rawTitle);
-    const detailHref = findDetailLink(card);
-    const detailUrl  = abs(detailHref);
+
+    // Extract VIN first — needed to anchor both the link and image lookups
     const vin        = (text.match(VIN_RE) || [])[0] || null;
+
+    // VIN-anchored detail link: find the link in the tightest subtree
+    // around the VIN text node, not the first link anywhere in card.
+    const nearVinHref = findLinkNearVin(card, vin);
+    const detailHref  = nearVinHref || findDetailLink(card);
+    const detailUrl   = abs(detailHref);
 
     const hasVin        = !!vin;
     const hasVehicleUrl = !!detailUrl && VEHICLE_URL.test(detailUrl);
