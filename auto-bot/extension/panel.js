@@ -411,6 +411,19 @@ function scrapeVehiclesOnPage() {
       const t = el.textContent.trim();
       if (t.length > 4 && !JUNK_TITLE.test(t)) return t;
     }
+    // Holman & many DealerInspire sites: title lives in the <a> wrapping
+    // the card image, or in an aria-label on the card anchor/button
+    const anchors = Array.from(card.querySelectorAll("a[aria-label],button[aria-label]"));
+    for (const a of anchors) {
+      const t = (a.getAttribute("aria-label") || "").trim();
+      if (t.length > 4 && TITLE_RE.test(t) && !JUNK_TITLE.test(t)) return t;
+    }
+    // Also try the text of the first anchor that looks like a vehicle name
+    const links = Array.from(card.querySelectorAll("a[href]"));
+    for (const a of links) {
+      const t = (a.textContent || "").trim();
+      if (t.length > 4 && TITLE_RE.test(t) && !JUNK_TITLE.test(t)) return t;
+    }
     const m = text.match(TITLE_RE);
     if (m) return m[0].trim();
     return null;
@@ -452,6 +465,59 @@ function scrapeVehiclesOnPage() {
     return null;
   };
 
+  // Extract the best available URL from an <img> element, trying all known
+  // lazy-load attributes before giving up.
+  function imgSrc(imgEl) {
+    if (!imgEl) return null;
+    return (
+      imgEl.currentSrc ||
+      imgEl.getAttribute("src") ||
+      imgEl.getAttribute("data-src") ||
+      imgEl.getAttribute("data-lazy") ||
+      imgEl.getAttribute("data-lazy-src") ||
+      imgEl.getAttribute("data-original") ||
+      imgEl.getAttribute("data-img") ||
+      imgEl.getAttribute("data-url") ||
+      (imgEl.getAttribute("srcset") || "").split(",")[0]?.trim().split(" ")[0] ||
+      null
+    );
+  }
+
+  // Find the <img> element closest in the DOM to the element containing
+  // the vehicle's VIN string. This prevents grabbing a sibling vehicle's
+  // photo when the scored candidate is a parent wrapper that contains
+  // multiple vehicle cards.
+  //
+  // Walk UP from the VIN text node, looking for the smallest ancestor that
+  // also contains an <img>. If we reach `card` without finding a tighter
+  // container, return null so caller falls back to card.querySelector("img").
+  function findImageNearVin(card, vin) {
+    if (!vin) return null;
+
+    // Find the element within card that contains the VIN as text
+    let vinEl = null;
+    const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue && node.nodeValue.includes(vin)) {
+        vinEl = node.parentElement;
+        break;
+      }
+    }
+    if (!vinEl) return null;
+
+    // Walk UP from vinEl toward card, stopping at the first ancestor
+    // (strictly inside card) that also contains an <img>
+    let el = vinEl;
+    while (el && el !== card) {
+      if (el.querySelector("img")) {
+        return el.querySelector("img");
+      }
+      el = el.parentElement;
+    }
+    return null; // no tighter subtree — caller uses card.querySelector("img")
+  }
+
   const out = [];
   for (const card of candidates) {
     const text       = card.innerText || "";
@@ -470,11 +536,12 @@ function scrapeVehiclesOnPage() {
     const stockMatch  = text.match(/Stock\s*#?:?\s*([A-Z0-9\-]+)/i);
     const stockNumber = stockMatch ? stockMatch[1] : null;
 
-    const imgRaw =
-      pickAttr(card, ["img[src]", "img[data-src]", "img[data-original]"], "src") ||
-      pickAttr(card, ["img[data-src]", "img[data-original]"], "data-src") ||
-      null;
-    const image = abs(imgRaw);
+    // Bug 1 fix: use VIN-anchored image lookup to avoid grabbing a sibling
+    // vehicle's photo when the candidate is a parent wrapper div.
+    const nearVinImg = findImageNearVin(card, vin);
+    const imgEl      = nearVinImg || card.querySelector("img");
+    const imgRaw     = imgSrc(imgEl);
+    const image      = abs(imgRaw);
 
     out.push({ title, price: bestPrice, mileage, vin, stockNumber, image, detailUrl, msrp });
   }
