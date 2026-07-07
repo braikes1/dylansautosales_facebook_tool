@@ -116,12 +116,16 @@ async function fetchDetailDataViaApi(detailUrl) {
     );
   }
 
+  // Auth token for the protected scrape/extract endpoints (stored at login by panel.js)
+  const { mf_token } = await chrome.storage.local.get("mf_token");
+  const authHeaders = mf_token ? { Authorization: `Bearer ${mf_token}` } : {};
+
   // ── PRIMARY PATH: FireCrawl via /fb/scrape_url ──────────────────────────
   console.log("[sw] PRIMARY: calling /fb/scrape_url for:", detailUrl);
   try {
     const scrapeResp = await fetch(API_SCRAPE, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify({ url: detailUrl }),
       signal: AbortSignal.timeout(90000),
     });
@@ -191,7 +195,7 @@ async function fetchDetailDataViaApi(detailUrl) {
         console.log("[sw] FALLBACK: calling /fb/extract_html | page URL:", url, "| images:", images.length);
         const resp = await fetch(API_EXTRACT, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({ url, html, images }),
         });
 

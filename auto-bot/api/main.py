@@ -120,7 +120,8 @@ def extract_json_object(raw: str, label: str = "") -> dict:
 
 
 @app.post("/fb/extract_html")
-def extract_html(body: HtmlPayload):
+def extract_html(body: HtmlPayload, authorization: Optional[str] = Header(default=None)):
+    _require_jwt(authorization)
     soup = BeautifulSoup(body.html, "html.parser")
     text = soup.get_text(separator="\n")[:20000]
 
@@ -282,11 +283,12 @@ _FC_SCHEMA = {
 
 
 @app.post("/fb/scrape_url")
-def scrape_url(body: ScrapeUrlPayload):
+def scrape_url(body: ScrapeUrlPayload, authorization: Optional[str] = Header(default=None)):
     """
     Scrape a single vehicle detail page URL via FireCrawl and return the same
     result-dict shape as /fb/extract_html so the extension needs zero changes.
     """
+    _require_jwt(authorization)
     fc_api_key = os.environ["FIRECRAWL_API_KEY"]
 
     fc_resp = requests.post(
