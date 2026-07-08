@@ -362,6 +362,126 @@ def scrape_url(body: ScrapeUrlPayload, authorization: Optional[str] = Header(def
 
 
 # =========================================================================
+# IMAGE SCRUBBING  (Standard tier)
+# =========================================================================
+
+class ScrubPayload(BaseModel):
+    image_url: str
+
+
+# Edit-capable image model. Verified 2026-07-07 against OpenAI's live docs:
+# the images.edit endpoint's `model` enum accepts gpt-image-1.5 / gpt-image-1 /
+# gpt-image-1-mini / chatgpt-image-latest. dall-e-2/3 were removed 2026-05-12.
+# gpt-image-2 exists but is NOT in the edit endpoint's accepted-model enum, so
+# it is deliberately not used here (would risk a hard error on images.edit).
+_SCRUB_EDIT_MODEL = "gpt-image-1.5"
+
+_SCRUB_PROMPT = (
+    "Remove all dealer watermarks, logos, overlay text, dealership names, phone "
+    "numbers, badges, and branding from this vehicle photo. Preserve the exact "
+    "vehicle, its angle, body color, trim, wheels, and the background unchanged. "
+    "Do not alter, restyle, or regenerate the car itself — only remove the "
+    "overlaid branding."
+)
+
+
+@app.post("/fb/scrub_image")
+def scrub_image(body: ScrubPayload, authorization: Optional[str] = Header(default=None)):
+    """
+    Standard-tier only. Detects dealer watermarks/branding on a vehicle photo
+    (gpt-4o vision, high detail) and, if present, returns a cleaned version
+    (gpt-image-1.5 edit on the ACTUAL image bytes, so the car is preserved).
+
+    Returns { scrubbed_url, scrubbed }. `scrubbed_url` is a data: URL because
+    gpt-image models return base64, not a hosted URL. Falls back to the original
+    URL on ANY error so the listing flow never breaks.
+    """
+    payload = _require_jwt(authorization)
+
+    # Tier gate — re-read the LIVE tier from Supabase (not the JWT's embedded
+    # `tier` claim, which can be stale after a mid-session downgrade), the same
+    # pattern /auth/verify uses. Fail closed: anything but "standard" is denied.
+    email = payload.get("email")
+    row = supabase.table("users").select("tier").eq("email", email).execute()
+    tier = row.data[0]["tier"] if row.data else "free"
+    if tier != "standard":
+        # TODO(pro-tier): when Pro launches, allow e.g. {"standard", "pro"} here.
+        raise HTTPException(status_code=403, detail="Scrub requires a Standard subscription.")
+
+    import base64
+    import io
+
+    url = body.image_url
+    try:
+        # Fetch the source image bytes.
+        r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        img_bytes = r.content
+        mime = r.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        img_b64 = base64.b64encode(img_bytes).decode()
+
+        # Step 1 — DETECTION (gpt-4o vision, detail="high"). A missed watermark
+        # means a branded photo reaching Marketplace, so bias toward catching it.
+        vision_resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:{mime};base64,{img_b64}", "detail": "high"}},
+                    {"type": "text",
+                     "text": ("Does this vehicle photo contain any dealer watermarks, "
+                              "logos, overlay text, dealership name, phone numbers, or "
+                              "branding? Answer ONLY with YES or NO.")},
+                ],
+            }],
+            max_tokens=5,
+        )
+        answer = (vision_resp.choices[0].message.content or "").strip().upper()
+        print(f"[scrub] watermark detected: {answer} for {url}", flush=True)
+
+        if "YES" not in answer:
+            # No branding found — nothing to remove, return the original untouched.
+            return {"scrubbed_url": url, "scrubbed": False}
+
+        # Step 2 — REMOVAL (gpt-image-1.5 edit, quality="medium"). Pass the real
+        # image bytes so the vehicle/angle/color/trim/background are preserved.
+        # `size` is intentionally omitted (API default) — forcing 1024x1024 would
+        # square/distort landscape car photos; "auto" is unconfirmed for edit.
+        ext = (mime.split("/")[-1] or "jpeg").replace("jpg", "jpeg")
+        img_file = io.BytesIO(img_bytes)
+        img_file.name = f"photo.{ext}"
+
+        edit_kwargs = dict(
+            model=_SCRUB_EDIT_MODEL,
+            image=img_file,
+            prompt=_SCRUB_PROMPT,
+            quality="medium",
+        )
+        # input_fidelity="high" strongly preserves the original subject. It isn't
+        # documented as settable on gpt-image-1.5 specifically, so if the API
+        # rejects it, retry once without it rather than let a param error turn
+        # every scrub into a silent no-op.
+        try:
+            edit_resp = client.images.edit(input_fidelity="high", **edit_kwargs)
+        except Exception as fidelity_err:
+            print(f"[scrub] input_fidelity unsupported ({fidelity_err}); retrying without", flush=True)
+            img_file.seek(0)
+            edit_resp = client.images.edit(**edit_kwargs)
+
+        d0 = edit_resp.data[0]
+        b64 = getattr(d0, "b64_json", None)
+        # gpt-image returns base64; surface it as a data URL the panel can render.
+        scrubbed_url = f"data:image/png;base64,{b64}" if b64 else getattr(d0, "url", url)
+        return {"scrubbed_url": scrubbed_url, "scrubbed": bool(b64) or scrubbed_url != url}
+
+    except Exception as e:
+        print(f"[scrub] error: {e}", flush=True)
+        # Always fall back gracefully — never break the listing flow.
+        return {"scrubbed_url": url, "scrubbed": False}
+
+
+# =========================================================================
 # AUTH ENDPOINTS
 # =========================================================================
 

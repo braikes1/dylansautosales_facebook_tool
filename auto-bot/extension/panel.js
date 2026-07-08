@@ -133,6 +133,7 @@ function init() {
   $("#scrapeBtn").addEventListener("click", scrapeCurrentPage);
   $("#backToList").addEventListener("click", () => switchView("list"));
   $("#btnSendFacebook").addEventListener("click", sendToFacebookFromDetail);
+  $("#scrubToggle").addEventListener("change", onScrubToggle);
   renderList();
   renderDetail();
 }
@@ -268,10 +269,16 @@ function renderPhotos(urls) {
   const grid = $("#photosGrid");
   const count = $("#photosCount");
   grid.innerHTML = "";
+  // Reset the scrub toggle for each freshly-rendered vehicle (photos start unscrubbed).
+  const scrubToggle = $("#scrubToggle");
+  const scrubStatus = $("#scrubStatus");
+  if (scrubToggle) scrubToggle.checked = false;
+  if (scrubStatus) scrubStatus.hidden = true;
   const clean = [...new Set(urls.filter((u) => typeof u === "string" && u))];
   clean.forEach((url) => {
     const item = document.createElement("div");
     item.className = "photo-item";
+    item.dataset.originalUrl = url; // preserved so scrub can restore the original
     const img = document.createElement("img");
     img.src = url;
     img.alt = "Vehicle photo";
@@ -316,6 +323,68 @@ function openDetailFor(vehicle) {
       renderDetail();
     }
   );
+}
+
+/* ========== SCRUB TOGGLE (Standard tier) ========== */
+
+async function onScrubToggle() {
+  const toggle = $("#scrubToggle");
+  const status = $("#scrubStatus");
+  const items  = Array.from($("#photosGrid").querySelectorAll(".photo-item"));
+
+  if (!toggle.checked) {
+    // Un-scrub: restore every photo to its original URL.
+    items.forEach((item) => {
+      const orig = item.dataset.originalUrl;
+      if (orig) item.querySelector("img").src = orig;
+      item.classList.remove("scrubbed", "scrubbing");
+    });
+    status.hidden = true;
+    return;
+  }
+
+  if (!items.length) { toggle.checked = false; return; }
+
+  const { mf_token } = await chrome.storage.local.get("mf_token");
+  const authHeaders = mf_token ? { Authorization: `Bearer ${mf_token}` } : {};
+
+  toggle.disabled = true;
+  status.hidden = false;
+  status.textContent = `Scrubbing ${items.length} photo${items.length > 1 ? "s" : ""}…`;
+
+  let done = 0;
+  // TODO: usage cap — /fb/scrub_image is billed per image (gpt-image-1.5 edit)
+  // and this fans out one request per photo with no ceiling. Add a per-user
+  // soft cap before GA (see projects/marketfill audit finding P-02). Do NOT
+  // build metering here yet — this comment marks the spot.
+  await Promise.all(items.map(async (item) => {
+    const url = item.dataset.originalUrl;
+    if (!url) return;
+    item.classList.add("scrubbing");
+    try {
+      const resp = await fetch(`${API}/fb/scrub_image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ image_url: url }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (data.scrubbed && data.scrubbed_url) {
+        item.querySelector("img").src = data.scrubbed_url;
+        item.classList.add("scrubbed");
+      }
+    } catch (e) {
+      console.warn("[scrub] failed for", url, e);
+    } finally {
+      item.classList.remove("scrubbing");
+      done++;
+      status.textContent = done < items.length
+        ? `Scrubbing photos… ${done}/${items.length}`
+        : `✓ ${done} processed`;
+    }
+  }));
+
+  toggle.disabled = false;
 }
 
 /* ========== SEND TO FACEBOOK ========== */
